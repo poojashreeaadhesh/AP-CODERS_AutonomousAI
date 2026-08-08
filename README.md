@@ -99,6 +99,7 @@ npm test
 
 See [.env.example](.env.example) for the full list with descriptions:
 `PORT`, `DATA_DIR`, `PUBLISH_INTERVAL_MINUTES`, `AUTONOMOUS_TICK_SECONDS`,
+`PUBLISH_JITTER_PCT`, `EDITORIAL_THRESHOLD_FLOOR`, `MAX_CATCHUP_POSTS`,
 `ANTHROPIC_API_KEY`, `LLM_ENABLED`, `LLM_MODEL`.
 
 ## Deployment Notes

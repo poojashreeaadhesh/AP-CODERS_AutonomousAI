@@ -108,8 +108,3 @@ console.log(`Autonomous AI Creator listening on http://localhost:${PORT}`);
 # 4th prompt 
 
 4. does this break anything from mac os side, is this an all around fix 
-
-
-# 5th prompt
-
-5. 

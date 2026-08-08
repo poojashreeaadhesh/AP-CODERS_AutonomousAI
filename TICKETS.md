@@ -80,15 +80,15 @@ docs: add README and .env.example
 - Wrap the feed handler so **any** unexpected throw still returns `200` with the last known posts (or `[]`) rather than 500.
 
 ### Acceptance criteria
-- [ ] `GET /api/agent/feed?agentId=<valid>` responds in **< 500ms** measured while a cycle is due (no network work on the read path)
-- [ ] `GET /api/agent/feed?agentId=totally-bogus` returns **200** with the real posts array (not 404, not 500)
-- [ ] `GET /api/agent/feed` with no `agentId` returns **400** with a JSON error and no stack trace
-- [ ] With all outbound network blocked, `GET /feed` still returns **200** and valid JSON
-- [ ] Feed remains newest-first, `id`s unique, every `createdAt` an ISO-8601 string ending in `Z`
-- [ ] `GET /health` returns 200 with all documented fields
-- [ ] A v1 `data/state.json` on disk loads without error and is rewritten as v2
-- [ ] Throwing an error deliberately inside the discovery path does not produce a 5xx on `/feed`
-- [ ] New test: `test/api.test.js` covers the bogus-`agentId`, missing-`agentId`, and empty-state cases
+- [x] `GET /api/agent/feed?agentId=<valid>` responds in **< 500ms** measured while a cycle is due (no network work on the read path)
+- [x] `GET /api/agent/feed?agentId=totally-bogus` returns **200** with the real posts array (not 404, not 500)
+- [x] `GET /api/agent/feed` with no `agentId` returns **400** with a JSON error and no stack trace
+- [x] With all outbound network blocked, `GET /feed` still returns **200** and valid JSON
+- [x] Feed remains newest-first, `id`s unique, every `createdAt` an ISO-8601 string ending in `Z`
+- [x] `GET /health` returns 200 with all documented fields
+- [x] A v1 `data/state.json` on disk loads without error and is rewritten as v2
+- [x] Throwing an error deliberately inside the discovery path does not produce a 5xx on `/feed`
+- [x] New test: `test/api.test.js` covers the bogus-`agentId`, missing-`agentId`, and empty-state cases
 
 ### Verify
 ```bash

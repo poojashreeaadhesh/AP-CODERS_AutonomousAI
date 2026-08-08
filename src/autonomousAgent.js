@@ -1,5 +1,5 @@
+import { DEFAULT_EDITORIAL_THRESHOLD, evaluateTopics } from "./editorial.js";
 import { discoverTopics } from "./discovery.js";
-import { evaluateTopics } from "./editorial.js";
 import { loadStore, withStore } from "./store.js";
 import { createId, nowIso } from "./utils.js";
 import { writePost } from "./writer.js";
@@ -16,14 +16,130 @@ const PRUNE_LIMITS = {
   cycles: 100
 };
 
+// Scheduling never goes silent for long: a quiet cycle decays the editorial
+// threshold and retries soon rather than waiting a full interval, and a
+// detected host gap is recovered gradually rather than backdated or dumped
+// in one synchronous burst.
+const THRESHOLD_DECAY_STEP = 0.75;
+const THRESHOLD_FLOOR = Number(process.env.EDITORIAL_THRESHOLD_FLOOR) || 2.0;
+const FIRST_POST_RETRY_MINUTES = 1;
+const QUIET_CYCLE_RETRY_MINUTES = 10;
+const CATCHUP_STEP_MINUTES = 8;
+const MAX_CATCHUP_CYCLES = Number(process.env.MAX_CATCHUP_POSTS) || 3;
+const JITTER_PCT = clamp01(process.env.PUBLISH_JITTER_PCT, 0.2);
+const STRONG_POOL_SIZE = 3;
+const STRONG_POOL_INTERVAL_FACTOR = 0.6;
+
+function clamp01(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : fallback;
+}
+
 function publishIntervalMs() {
   const configured = Number(process.env.PUBLISH_INTERVAL_MINUTES || DEFAULT_INTERVAL_MINUTES);
   const minutes = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_INTERVAL_MINUTES;
   return minutes * 60 * 1000;
 }
 
-function nextPublishIso(fromDate = new Date()) {
-  return new Date(fromDate.getTime() + publishIntervalMs()).toISOString();
+function jitteredMs(ms) {
+  const factor = 1 - JITTER_PCT + Math.random() * (2 * JITTER_PCT);
+  return Math.round(ms * factor);
+}
+
+function isoAfterMinutes(fromDate, minutes, { jitter = false } = {}) {
+  const ms = Math.max(0, minutes) * 60 * 1000;
+  return new Date(fromDate.getTime() + (jitter ? jitteredMs(ms) : ms)).toISOString();
+}
+
+export function decayThreshold(current) {
+  return Math.max(THRESHOLD_FLOOR, Number((current - THRESHOLD_DECAY_STEP).toFixed(2)));
+}
+
+/**
+ * Pure scheduling decision, kept separate from the cycle side effects so it
+ * can be unit tested without touching discovery or the network. Decides the
+ * next publish time, a human-readable reason for it, the editorial threshold
+ * for the next cycle, and how many catch-up-paced cycles remain.
+ */
+export function computeSchedule({
+  now,
+  previousNextPublishAt,
+  hadNoPostsBefore,
+  published,
+  acceptedCount,
+  currentThreshold,
+  catchUpCreditsRemaining
+}) {
+  const baseIntervalMs = publishIntervalMs();
+  const baseIntervalMinutes = Math.round(baseIntervalMs / 60000);
+  const overdueMs = now.getTime() - new Date(previousNextPublishAt).getTime();
+  const isGap = overdueMs > baseIntervalMs;
+
+  let credits = catchUpCreditsRemaining || 0;
+  const usingCatchUpPacing = isGap || credits > 0;
+
+  if (isGap && credits <= 0) {
+    credits = MAX_CATCHUP_CYCLES - 1;
+    console.warn(
+      `Resumed after a ${Math.round(overdueMs / 60000)}m host gap; ` +
+        `pacing up to ${MAX_CATCHUP_CYCLES} catch-up cycles ${CATCHUP_STEP_MINUTES}m apart instead of backdating`
+    );
+  } else if (credits > 0) {
+    // Consume one credit for this cycle; usingCatchUpPacing was already
+    // captured above so the cycle that spends the last credit still uses
+    // catch-up pacing instead of falling through to the normal cadence.
+    credits -= 1;
+  }
+
+  if (!published) {
+    const editorialThreshold = decayThreshold(currentThreshold);
+
+    if (hadNoPostsBefore) {
+      return {
+        nextPublishAt: isoAfterMinutes(now, FIRST_POST_RETRY_MINUTES),
+        nextPublishReason: `no post published yet; nothing cleared the bar, retrying in ${FIRST_POST_RETRY_MINUTES}m at a lower threshold`,
+        editorialThreshold,
+        catchUpCreditsRemaining: credits
+      };
+    }
+
+    return {
+      nextPublishAt: isoAfterMinutes(now, QUIET_CYCLE_RETRY_MINUTES),
+      nextPublishReason: `nothing cleared the bar, retrying in ${QUIET_CYCLE_RETRY_MINUTES}m at a lower threshold`,
+      editorialThreshold,
+      catchUpCreditsRemaining: credits
+    };
+  }
+
+  // Published — reset the threshold to base and pick a cadence.
+  if (usingCatchUpPacing) {
+    return {
+      nextPublishAt: isoAfterMinutes(now, CATCHUP_STEP_MINUTES),
+      nextPublishReason: `catching up after a host gap, publishing again in ${CATCHUP_STEP_MINUTES}m`,
+      editorialThreshold: DEFAULT_EDITORIAL_THRESHOLD,
+      catchUpCreditsRemaining: credits
+    };
+  }
+
+  if (acceptedCount >= STRONG_POOL_SIZE) {
+    const minutes = Math.round(baseIntervalMinutes * STRONG_POOL_INTERVAL_FACTOR);
+    return {
+      nextPublishAt: isoAfterMinutes(now, minutes, { jitter: true }),
+      nextPublishReason: `${acceptedCount} strong candidates queued, publishing again in ${minutes}m`,
+      editorialThreshold: DEFAULT_EDITORIAL_THRESHOLD,
+      catchUpCreditsRemaining: 0
+    };
+  }
+
+  return {
+    nextPublishAt: isoAfterMinutes(now, baseIntervalMinutes, { jitter: true }),
+    nextPublishReason:
+      acceptedCount <= 1
+        ? `quiet news cycle, backing off to ${baseIntervalMinutes}m`
+        : `publishing again in ${baseIntervalMinutes}m`,
+    editorialThreshold: DEFAULT_EDITORIAL_THRESHOLD,
+    catchUpCreditsRemaining: 0
+  };
 }
 
 function normalizePersona(persona = {}) {
@@ -62,7 +178,10 @@ export function createInitialState(personaInput) {
     rejectedTopics: [],
     seenTopics: [],
     cycles: [],
-    nextPublishAt: createdAt
+    nextPublishAt: createdAt,
+    nextPublishReason: "initial cycle scheduled immediately after initialization",
+    editorialThreshold: DEFAULT_EDITORIAL_THRESHOLD,
+    catchUpCreditsRemaining: 0
   };
 }
 
@@ -92,8 +211,12 @@ function recordSeenTopics(agentState, topics, now) {
 }
 
 async function runSingleDueCycle(agentState, now = new Date()) {
+  const hadNoPostsBefore = agentState.posts.length === 0;
+  const previousNextPublishAt = agentState.nextPublishAt;
+  const threshold = agentState.editorialThreshold ?? DEFAULT_EDITORIAL_THRESHOLD;
+
   const topics = await discoverTopics(agentState.agent.persona);
-  const evaluation = evaluateTopics(topics, agentState, now);
+  const evaluation = evaluateTopics(topics, agentState, now, threshold);
 
   recordSeenTopics(agentState, topics, now);
   agentState.rejectedTopics.push(...evaluation.rejected);
@@ -104,6 +227,8 @@ async function runSingleDueCycle(agentState, now = new Date()) {
     ranAt: now.toISOString(),
     candidatesDiscovered: topics.length,
     rejectedCount: evaluation.rejected.length,
+    acceptedCount: evaluation.acceptedCount,
+    editorialThreshold: threshold,
     publishedPostId: null,
     status: "no_publishable_topic"
   };
@@ -115,9 +240,24 @@ async function runSingleDueCycle(agentState, now = new Date()) {
     cycle.status = "published";
   }
 
+  const schedule = computeSchedule({
+    now,
+    previousNextPublishAt,
+    hadNoPostsBefore,
+    published: cycle.status === "published",
+    acceptedCount: evaluation.acceptedCount,
+    currentThreshold: threshold,
+    catchUpCreditsRemaining: agentState.catchUpCreditsRemaining || 0
+  });
+
+  agentState.nextPublishAt = schedule.nextPublishAt;
+  agentState.nextPublishReason = schedule.nextPublishReason;
+  agentState.editorialThreshold = schedule.editorialThreshold;
+  agentState.catchUpCreditsRemaining = schedule.catchUpCreditsRemaining;
+  cycle.nextPublishReason = schedule.nextPublishReason;
+
   agentState.cycles.unshift(cycle);
   agentState.cycles = agentState.cycles.slice(0, PRUNE_LIMITS.cycles);
-  agentState.nextPublishAt = nextPublishIso(now);
 
   return cycle;
 }
@@ -211,11 +351,16 @@ export async function getHealthSnapshot() {
     return !latest || new Date(cycle.ranAt) > new Date(latest) ? cycle.ranAt : latest;
   }, null);
 
-  const nextPublishAt = ids.reduce((soonest, id) => {
-    const npa = store.agents[id].nextPublishAt;
-    if (!npa) return soonest;
-    return !soonest || new Date(npa) < new Date(soonest) ? npa : soonest;
-  }, null);
+  let nextPublishAt = null;
+  let nextPublishReason = null;
+  for (const id of ids) {
+    const candidate = store.agents[id].nextPublishAt;
+    if (!candidate) continue;
+    if (!nextPublishAt || new Date(candidate) < new Date(nextPublishAt)) {
+      nextPublishAt = candidate;
+      nextPublishReason = store.agents[id].nextPublishReason || null;
+    }
+  }
 
   return {
     ok: true,
@@ -223,7 +368,8 @@ export async function getHealthSnapshot() {
     agents: ids.length,
     posts: totalPosts,
     lastCycleAt,
-    nextPublishAt
+    nextPublishAt,
+    nextPublishReason
   };
 }
 

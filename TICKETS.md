@@ -161,14 +161,14 @@ test: concurrency and corruption recovery for the store
 - Defaults: `PUBLISH_INTERVAL_MINUTES=75` (not 120 — that halves feed volume and makes any stall conspicuous), `AUTONOMOUS_TICK_SECONDS=30`.
 
 ### Acceptance criteria
-- [ ] From a clean state, `POST /init` then poll `/feed`: **at least one post exists within 90 seconds**, with no other request made
-- [ ] New test: an agent whose candidates all score below threshold still publishes within 5 simulated retry cycles (threshold decay works and is bounded by the floor)
-- [ ] New test: threshold resets to base after a successful publish
-- [ ] With `PUBLISH_INTERVAL_MINUTES=1`, 10 consecutive gaps between `createdAt` values are **not all identical** (jitter is live)
-- [ ] `GET /health` (and T8's `/status`) exposes a non-empty `nextPublishReason` after the first cycle
-- [ ] New test: simulating a 10-hour gap produces **exactly 3** catch-up posts, each ≥8 minutes apart in `nextPublishAt` scheduling, none with a `createdAt` earlier than the resume time
-- [ ] No `createdAt` in the feed is ever earlier than the cycle that produced it
-- [ ] A quiet cycle is still recorded with `status: "no_publishable_topic"` and appears in the cycle history
+- [x] From a clean state, `POST /init` then poll `/feed`: **at least one post exists within 90 seconds**, with no other request made
+- [x] New test: an agent whose candidates all score below threshold still publishes within 5 simulated retry cycles (threshold decay works and is bounded by the floor)
+- [x] New test: threshold resets to base after a successful publish
+- [x] With `PUBLISH_INTERVAL_MINUTES=1`, 10 consecutive gaps between `createdAt` values are **not all identical** (jitter is live)
+- [x] `GET /health` (and T8's `/status`) exposes a non-empty `nextPublishReason` after the first cycle
+- [x] New test: simulating a 10-hour gap produces **exactly 3** catch-up posts, each ≥8 minutes apart in `nextPublishAt` scheduling, none with a `createdAt` earlier than the resume time
+- [x] No `createdAt` in the feed is ever earlier than the cycle that produced it
+- [x] A quiet cycle is still recorded with `status: "no_publishable_topic"` and appears in the cycle history
 
 ### Commits
 ```

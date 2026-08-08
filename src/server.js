@@ -1,6 +1,7 @@
 import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { getHealthSnapshot, initializeAgent, loadFeedState, startBackgroundWorker } from "./autonomousAgent.js";
+import { assertDurableStorage } from "./store.js";
 import { readRequestJson, sendJson } from "./utils.js";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -95,6 +96,7 @@ if (process.argv[1] && currentFile === process.argv[1]) {
     console.error("Uncaught exception:", error);
   });
 
+  await assertDurableStorage();
   startBackgroundWorker();
 
   const server = createServer();

@@ -1,11 +1,20 @@
 import { discoverTopics } from "./discovery.js";
 import { evaluateTopics } from "./editorial.js";
-import { loadStore, saveStore } from "./store.js";
+import { loadStore, withStore } from "./store.js";
 import { createId, nowIso } from "./utils.js";
 import { writePost } from "./writer.js";
 
 const DEFAULT_INTERVAL_MINUTES = 120;
 const MAX_POSTS_PER_CYCLE = 1;
+
+// Centralized pruning caps so memory growth is bounded from a single place.
+// Posts are exempt: the API contract requires previously returned posts to
+// remain available for the life of the agent.
+const PRUNE_LIMITS = {
+  seenTopics: 300,
+  rejectedTopics: 150,
+  cycles: 100
+};
 
 function publishIntervalMs() {
   const configured = Number(process.env.PUBLISH_INTERVAL_MINUTES || DEFAULT_INTERVAL_MINUTES);
@@ -58,11 +67,11 @@ export function createInitialState(personaInput) {
 }
 
 export async function initializeAgent(personaInput) {
-  const store = await loadStore();
   const agentState = createInitialState(personaInput);
 
-  store.agents[agentState.agent.id] = agentState;
-  await saveStore(store);
+  await withStore((store) => {
+    store.agents[agentState.agent.id] = agentState;
+  });
 
   return agentState;
 }
@@ -79,7 +88,7 @@ function recordSeenTopics(agentState, topics, now) {
     });
   }
 
-  agentState.seenTopics = agentState.seenTopics.slice(-300);
+  agentState.seenTopics = agentState.seenTopics.slice(-PRUNE_LIMITS.seenTopics);
 }
 
 async function runSingleDueCycle(agentState, now = new Date()) {
@@ -88,7 +97,7 @@ async function runSingleDueCycle(agentState, now = new Date()) {
 
   recordSeenTopics(agentState, topics, now);
   agentState.rejectedTopics.push(...evaluation.rejected);
-  agentState.rejectedTopics = agentState.rejectedTopics.slice(-150);
+  agentState.rejectedTopics = agentState.rejectedTopics.slice(-PRUNE_LIMITS.rejectedTopics);
 
   const cycle = {
     id: createId("cycle"),
@@ -107,7 +116,7 @@ async function runSingleDueCycle(agentState, now = new Date()) {
   }
 
   agentState.cycles.unshift(cycle);
-  agentState.cycles = agentState.cycles.slice(0, 100);
+  agentState.cycles = agentState.cycles.slice(0, PRUNE_LIMITS.cycles);
   agentState.nextPublishAt = nextPublishIso(now);
 
   return cycle;
@@ -126,25 +135,26 @@ export async function runDueCyclesForAgent(agentState, now = new Date()) {
 }
 
 /**
- * Runs due cycles for every agent in a freshly loaded store and persists only
- * if something changed. Callers on the read path must not await this — it
- * does discovery/editorial/writer work and must never block or fail a feed
- * read.
+ * Runs due cycles for every agent and persists only if something changed.
+ * Goes through withStore() so concurrent invocations (the background tick
+ * and multiple feed reads) serialize instead of racing on a shared
+ * load-mutate-save cycle, which would otherwise silently drop posts.
+ *
+ * Callers on the read path must not await this — it does discovery/
+ * editorial/writer work and must never block or fail a feed read.
  */
-async function catchUpAllAgents(now = new Date()) {
-  const store = await loadStore();
-  const ids = Object.keys(store.agents);
-  if (ids.length === 0) return;
+export async function runDueCyclesForAllAgents(now = new Date()) {
+  return withStore(async (store) => {
+    const ids = Object.keys(store.agents);
+    let ranCycles = 0;
 
-  let didWork = false;
-  for (const id of ids) {
-    const { ranCycles } = await runDueCyclesForAgent(store.agents[id], now);
-    if (ranCycles > 0) didWork = true;
-  }
+    for (const id of ids) {
+      const result = await runDueCyclesForAgent(store.agents[id], now);
+      ranCycles += result.ranCycles;
+    }
 
-  if (didWork) {
-    await saveStore(store);
-  }
+    return { ranCycles, save: ranCycles > 0 };
+  });
 }
 
 function resolveAgentId(store, requestedAgentId) {
@@ -177,7 +187,7 @@ export async function loadFeedState(requestedAgentId) {
 
   // Fire-and-forget: a feed read returns immediately and never fails because
   // a discovery/editorial cycle happened to be due.
-  catchUpAllAgents().catch((error) => {
+  runDueCyclesForAllAgents().catch((error) => {
     console.error("Background catch-up cycle failed:", error.message);
   });
 
@@ -221,10 +231,22 @@ export function startBackgroundWorker() {
   const tickSeconds = Number(process.env.AUTONOMOUS_TICK_SECONDS || 60);
   const intervalMs = Math.max(15, tickSeconds) * 1000;
 
-  const tick = () =>
-    catchUpAllAgents().catch((error) => {
+  // Skip a tick outright if the previous one is still running, rather than
+  // queuing ticks indefinitely behind a slow discovery call.
+  let tickInFlight = false;
+
+  const tick = async () => {
+    if (tickInFlight) return;
+    tickInFlight = true;
+
+    try {
+      await runDueCyclesForAllAgents();
+    } catch (error) {
       console.error("Autonomous tick failed:", error.message);
-    });
+    } finally {
+      tickInFlight = false;
+    }
+  };
 
   const timer = setInterval(tick, intervalMs);
   timer.unref?.();

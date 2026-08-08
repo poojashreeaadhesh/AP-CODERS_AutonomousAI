@@ -123,15 +123,15 @@ test: api contract behaviour under bad input and network failure
 - Enforce pruning caps in one place: `seenTopics` 300, `rejectedTopics` 150, `cycles` 100, `activityLog` 500. **`posts` is never truncated** (the spec requires previously returned posts to remain available).
 
 ### Acceptance criteria
-- [ ] New test: 20 concurrent `runDueCycles` calls produce **at most one** new post and zero lost posts
-- [ ] New test: a truncated/corrupt `state.json` with a valid `.bak` recovers all posts, and `loadState` does not throw
-- [ ] New test: a corrupt `state.json` with a corrupt `.bak` returns the in-memory state rather than throwing
-- [ ] After `kill -9` during a write, restarting yields valid JSON (either the pre-write or post-write state, never a partial file)
-- [ ] `state.json.tmp` never remains on disk after a successful save
-- [ ] Restarting the process preserves `agentId`, all posts, memory, and `nextPublishAt`
-- [ ] Boot with `DATA_DIR=/nonexistent-readonly` logs a `WARN state-not-durable` line and still serves requests
-- [ ] `posts.length` never decreases across the process lifetime
-- [ ] `store.js` exports only the interface functions; no other module reads or writes `state.json` directly (`grep -rn "state.json" src/ | grep -v store.js` is empty)
+- [x] New test: 20 concurrent `runDueCycles` calls produce **at most one** new post and zero lost posts
+- [x] New test: a truncated/corrupt `state.json` with a valid `.bak` recovers all posts, and `loadState` does not throw
+- [x] New test: a corrupt `state.json` with a corrupt `.bak` returns the in-memory state rather than throwing
+- [x] After `kill -9` during a write, restarting yields valid JSON (either the pre-write or post-write state, never a partial file)
+- [x] `state.json.tmp` never remains on disk after a successful save
+- [x] Restarting the process preserves `agentId`, all posts, memory, and `nextPublishAt`
+- [x] Boot with `DATA_DIR=/nonexistent-readonly` logs a `WARN state-not-durable` line and still serves requests
+- [x] `posts.length` never decreases across the process lifetime
+- [x] `store.js` exports only the interface functions; no other module reads or writes `state.json` directly (`grep -rn "state.json" src/ | grep -v store.js` is empty)
 
 ### Commits
 ```

@@ -1,7 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createServer } from "../src/server.js";
-import { clearStateForTests } from "../src/store.js";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+// Each test file gets its own DATA_DIR so parallel test files (node --test
+// runs files concurrently) never race on the same physical state.json.
+process.env.DATA_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "aic-api-test-"));
+
+const { createServer } = await import("../src/server.js");
+const { clearStateForTests } = await import("../src/store.js");
 
 async function withServer(fn) {
   await clearStateForTests();

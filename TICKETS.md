@@ -39,13 +39,13 @@
 - Confirm `data/` is untracked and that no `state.json` is in history.
 
 ### Acceptance criteria
-- [ ] `git ls-files | grep -E 'DS_Store|state\.json|node_modules|\.env$'` returns **nothing**
-- [ ] `AI_USAGE_LOG.md` and `README.md` exist at the repo root and render on GitHub
-- [ ] `package.json` is at the repo root; `npm ci && npm test` passes from a **fresh clone into a new directory**
-- [ ] `npm start` from the repo root boots and serves `GET /` with 200
-- [ ] `First_iteration/` no longer exists
-- [ ] `git log --follow src/server.js` shows history preserved through the move (used `git mv`, not delete+add)
-- [ ] `.env.example` contains no secret values
+- [x] `git ls-files | grep -E 'DS_Store|state\.json|node_modules|\.env$'` returns **nothing**
+- [x] `AI_USAGE_LOG.md` and `README.md` exist at the repo root and render on GitHub
+- [x] `package.json` is at the repo root; `npm ci && npm test` passes from a **fresh clone into a new directory**
+- [x] `npm start` from the repo root boots and serves `GET /` with 200
+- [x] `First_iteration/` no longer exists
+- [x] `git log --follow src/server.js` shows history preserved through the move (used `git mv`, not delete+add)
+- [x] `.env.example` contains no secret values
 
 ### Verify
 ```bash

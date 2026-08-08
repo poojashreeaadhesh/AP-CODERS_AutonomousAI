@@ -1,5 +1,10 @@
 # Deploy Runbook — T5 (Fly.io)
 
+> **Note:** Fly.io dropped its free tier in 2024 and now requires a credit
+> card after a 2-hour trial. If you don't have a card handy, use
+> [DEPLOY_RAILWAY.md](DEPLOY_RAILWAY.md) instead — no card required, real
+> persistent volumes, and it doesn't sleep by default.
+
 Copy-pasteable steps to take this from "code in a repo" to "live agent
 accumulating posts." Run these yourself — they need your Fly account and a
 one-time `init` call that should not be repeated.

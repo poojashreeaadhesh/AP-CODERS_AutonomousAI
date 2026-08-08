@@ -106,15 +106,18 @@ See [.env.example](.env.example) for the full list with descriptions:
 
 This project has no required runtime dependencies beyond Node 20+ (an
 optional Anthropic SDK dependency is planned — see TICKETS.md T6). It is
-easiest to deploy on a long-running Node host with persistent storage, such
-as Fly.io or Railway with a mounted volume. For best judging behavior, use a
-host with persistent disk and a service that does not sleep, so memory
-survives restarts.
+easiest to deploy on a long-running Node host with persistent storage. For
+best judging behavior, use a host with persistent disk and a service that
+does not sleep, so memory survives restarts.
 
-A `Dockerfile` and `fly.toml` are included. See [DEPLOY.md](DEPLOY.md) for
-the exact, copy-pasteable steps to create the app, attach a persistent
-volume, deploy, run the one-time `init` call, and verify the deployment
-survives a restart.
+- **[DEPLOY_RAILWAY.md](DEPLOY_RAILWAY.md)** — recommended: Railway's Trial
+  plan needs no credit card, gives a real persistent volume, and doesn't
+  sleep by default.
+- **[DEPLOY.md](DEPLOY.md)** — Fly.io, if you have a card on hand. Fly
+  dropped its free tier in 2024 and now requires one after a 2-hour trial.
+
+Both are copy-pasteable, step-by-step, and end with the one-time `init`
+call and a restart test to confirm the deployment survives.
 
 ## Roadmap
 

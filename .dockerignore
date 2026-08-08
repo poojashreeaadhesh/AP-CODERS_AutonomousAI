@@ -1,0 +1,11 @@
+node_modules
+data
+.env
+.env.*
+!.env.example
+.git
+.DS_Store
+test
+TICKETS.md
+PROMPTS
+*.log

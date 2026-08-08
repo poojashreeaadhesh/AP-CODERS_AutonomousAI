@@ -1,6 +1,7 @@
 import http from "node:http";
 import { initializeAgent, loadFeedState, startBackgroundWorker } from "./autonomousAgent.js";
 import { readRequestJson, sendJson } from "./utils.js";
+import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -64,14 +65,27 @@ async function handleRequest(request, response) {
 export function createServer() {
   return http.createServer((request, response) => {
     handleRequest(request, response).catch((error) => {
-      sendJson(response, 500, { error: "Unexpected server error", detail: error.message });
+      sendJson(response, 500, {
+        error: "Unexpected server error",
+        detail: error.message
+      });
     });
   });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+
+const currentFile = fileURLToPath(import.meta.url);
+
+// Start the server when this file is executed directly
+if (process.argv[1] && currentFile === process.argv[1]) {
   startBackgroundWorker();
-  createServer().listen(PORT, () => {
+
+  const server = createServer();
+  server.listen(PORT, "0.0.0.0", () => {
     console.log(`Autonomous AI Creator listening on http://localhost:${PORT}`);
+  });
+
+  server.on("error", (err) => {
+    console.error("Failed to start server:", err);
   });
 }

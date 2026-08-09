@@ -1,6 +1,7 @@
 import { DEFAULT_EDITORIAL_THRESHOLD, evaluateTopicsWithLLM } from "./editorial.js";
-import { discoverTopics } from "./discovery.js";
+import { discoverTopicsWithTelemetry } from "./discovery.js";
 import { buildMemoryHints, updateMemoryWithPost } from "./memory.js";
+import { getPersonaCharter } from "./persona.js";
 import { loadStore, withStore } from "./store.js";
 import { createId, nowIso } from "./utils.js";
 import { writePostWithLLM } from "./writer.js";
@@ -14,7 +15,8 @@ const MAX_POSTS_PER_CYCLE = 1;
 const PRUNE_LIMITS = {
   seenTopics: 300,
   rejectedTopics: 150,
-  cycles: 100
+  cycles: 100,
+  activityLog: 500
 };
 
 // Scheduling never goes silent for long: a quiet cycle decays the editorial
@@ -150,6 +152,22 @@ function normalizePersona(persona = {}) {
   };
 }
 
+function appendActivity(agentState, event, message, { level = "info", data = {}, at = new Date() } = {}) {
+  agentState.activityLog ||= [];
+  agentState.activityLog.unshift({
+    at: at.toISOString(),
+    level,
+    event,
+    message,
+    data
+  });
+  agentState.activityLog = agentState.activityLog.slice(0, PRUNE_LIMITS.activityLog);
+}
+
+function emptyActivityMessage() {
+  return "no agent initialized yet";
+}
+
 export function createInitialState(personaInput) {
   const createdAt = nowIso();
   const persona = normalizePersona(personaInput);
@@ -179,6 +197,8 @@ export function createInitialState(personaInput) {
     rejectedTopics: [],
     seenTopics: [],
     memory: { themes: {}, entities: {} },
+    sourceHealth: {},
+    activityLog: [],
     cycles: [],
     nextPublishAt: createdAt,
     nextPublishReason: "initial cycle scheduled immediately after initialization",
@@ -189,6 +209,13 @@ export function createInitialState(personaInput) {
 
 export async function initializeAgent(personaInput) {
   const agentState = createInitialState(personaInput);
+  appendActivity(agentState, "agent.initialized", `initialized ${agentState.agent.persona.name} for ${agentState.agent.persona.domain}`, {
+    at: new Date(agentState.agent.createdAt),
+    data: {
+      agentId: agentState.agent.id,
+      persona: agentState.agent.persona
+    }
+  });
 
   await withStore((store) => {
     store.agents[agentState.agent.id] = agentState;
@@ -223,6 +250,36 @@ export async function runPublishingCycle(agentState, topics, now = new Date()) {
   agentState.rejectedTopics.push(...evaluation.rejected);
   agentState.rejectedTopics = agentState.rejectedTopics.slice(-PRUNE_LIMITS.rejectedTopics);
 
+  appendActivity(agentState, "topics.evaluated", `evaluated ${topics.length} candidates and rejected ${evaluation.rejected.length}`, {
+    at: now,
+    data: {
+      candidatesDiscovered: topics.length,
+      acceptedCount: evaluation.acceptedCount,
+      rejectedCount: evaluation.rejected.length,
+      decidedBy: evaluation.decidedBy || "heuristic-fallback"
+    }
+  });
+
+  for (const rejected of evaluation.rejected.slice(0, 10)) {
+    appendActivity(agentState, "topic.rejected", `rejected "${rejected.title}" — ${rejected.reason}`, {
+      at: now,
+      data: {
+        title: rejected.title,
+        url: rejected.url,
+        score: rejected.score,
+        reason: rejected.reason
+      }
+    });
+  }
+
+  if (evaluation.llmError) {
+    appendActivity(agentState, "llm.fallback", "LLM editorial call fell back to deterministic scoring", {
+      level: "warn",
+      at: now,
+      data: { model: evaluation.model, reason: evaluation.llmError }
+    });
+  }
+
   const cycle = {
     id: createId("cycle"),
     ranAt: now.toISOString(),
@@ -233,6 +290,8 @@ export async function runPublishingCycle(agentState, topics, now = new Date()) {
     decidedBy: evaluation.decidedBy || "heuristic-fallback",
     model: evaluation.model || "heuristic",
     tokensUsed: evaluation.tokensUsed || 0,
+    sourcesQueried: [...new Set(topics.map((topic) => topic.sourceName).filter(Boolean))],
+    sourcesFailed: [],
     publishedPostId: null,
     status: "no_publishable_topic"
   };
@@ -251,6 +310,26 @@ export async function runPublishingCycle(agentState, topics, now = new Date()) {
     cycle.model = post.model;
     cycle.tokensUsed = post.tokensUsed || cycle.tokensUsed;
     cycle.status = "published";
+    appendActivity(agentState, "post.published", `published ${post.id} — ${post.sourceTitle || post.text.split("\n")[0]}`, {
+      at: now,
+      data: {
+        postId: post.id,
+        sourceTitle: post.sourceTitle,
+        url: post.sources?.[0],
+        decidedBy: post.decidedBy,
+        model: post.model,
+        editorialScore: post.editorialScore
+      }
+    });
+  } else {
+    appendActivity(agentState, "cycle.no_publish", "cycle ended with no publishable topic", {
+      at: now,
+      data: {
+        candidatesDiscovered: topics.length,
+        rejectedCount: evaluation.rejected.length,
+        decidedBy: evaluation.decidedBy || "heuristic-fallback"
+      }
+    });
   }
 
   const schedule = computeSchedule({
@@ -269,6 +348,15 @@ export async function runPublishingCycle(agentState, topics, now = new Date()) {
   agentState.catchUpCreditsRemaining = schedule.catchUpCreditsRemaining;
   cycle.nextPublishReason = schedule.nextPublishReason;
 
+  appendActivity(agentState, "schedule.updated", `next cycle ${schedule.nextPublishAt} — ${schedule.nextPublishReason}`, {
+    at: now,
+    data: {
+      nextPublishAt: schedule.nextPublishAt,
+      nextPublishReason: schedule.nextPublishReason,
+      editorialThreshold: schedule.editorialThreshold
+    }
+  });
+
   agentState.cycles.unshift(cycle);
   agentState.cycles = agentState.cycles.slice(0, PRUNE_LIMITS.cycles);
 
@@ -276,8 +364,37 @@ export async function runPublishingCycle(agentState, topics, now = new Date()) {
 }
 
 async function runSingleDueCycle(agentState, now = new Date()) {
-  const topics = await discoverTopics(agentState.agent.persona);
-  return runPublishingCycle(agentState, topics, now);
+  appendActivity(agentState, "discovery.start", "starting live topic discovery", { at: now });
+  const { topics, sourceResults } = await discoverTopicsWithTelemetry(agentState.agent.persona);
+  const sourceHealth = agentState.sourceHealth || {};
+
+  for (const result of sourceResults) {
+    const existing = sourceHealth[result.sourceName] || { consecutiveFailures: 0 };
+    sourceHealth[result.sourceName] = {
+      status: result.status,
+      query: result.query,
+      lastCount: result.count,
+      lastCheckedAt: now.toISOString(),
+      consecutiveFailures: result.status === "failed" ? (existing.consecutiveFailures || 0) + 1 : 0,
+      lastError: result.error || null
+    };
+
+    if (result.status === "failed") {
+      appendActivity(agentState, "discovery.source_failed", `${result.sourceName} failed during discovery`, {
+        level: "warn",
+        at: now,
+        data: { sourceName: result.sourceName, query: result.query, error: result.error }
+      });
+    }
+  }
+
+  agentState.sourceHealth = sourceHealth;
+  const cycle = await runPublishingCycle(agentState, topics, now);
+  cycle.sourcesQueried = sourceResults.map((result) => result.sourceName);
+  cycle.sourcesFailed = sourceResults
+    .filter((result) => result.status === "failed")
+    .map((result) => ({ sourceName: result.sourceName, error: result.error }));
+  return cycle;
 }
 
 export async function runDueCyclesForAgent(agentState, now = new Date()) {
@@ -389,6 +506,128 @@ export async function getHealthSnapshot() {
     nextPublishAt,
     nextPublishReason
   };
+}
+
+function emptyTransparencyPayload(kind) {
+  if (kind === "status") {
+    return {
+      agent: null,
+      persona: null,
+      charter: null,
+      counts: { posts: 0, evaluated: 0, rejected: 0, cycles: 0 },
+      initializedAt: null,
+      uptimeSeconds: Math.floor(process.uptime()),
+      lastCycleAt: null,
+      nextPublishAt: null,
+      nextPublishReason: emptyActivityMessage(),
+      currentThreshold: DEFAULT_EDITORIAL_THRESHOLD,
+      sourceHealth: {},
+      llmEnabled: process.env.LLM_ENABLED !== "false" && Boolean(process.env.ANTHROPIC_API_KEY)
+    };
+  }
+  if (kind === "memory") return { themes: {}, entities: {}, coveredUrls: [] };
+  if (kind === "rejected") return { rejected: [] };
+  if (kind === "cycles") return { cycles: [] };
+  if (kind === "log") return { log: [] };
+  return {};
+}
+
+function limitFromSearchParams(searchParams, fallback = 50, max = 200) {
+  const parsed = Number(searchParams.get("limit"));
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(max, Math.floor(parsed));
+}
+
+async function resolveAgentForRead(requestedAgentId) {
+  const store = await loadStore();
+  const resolvedAgentId = resolveAgentId(store, requestedAgentId);
+  if (!resolvedAgentId) return { agentState: null, resolvedAgentId: null };
+  return { agentState: store.agents[resolvedAgentId], resolvedAgentId };
+}
+
+export async function loadAgentStatus(requestedAgentId) {
+  const { agentState, resolvedAgentId } = await resolveAgentForRead(requestedAgentId);
+  if (!agentState) return emptyTransparencyPayload("status");
+
+  const lastCycle = agentState.cycles[0] || null;
+  const evaluated = agentState.cycles.reduce((sum, cycle) => sum + (cycle.candidatesDiscovered || 0), 0);
+
+  return {
+    agent: { id: resolvedAgentId, createdAt: agentState.agent.createdAt },
+    persona: agentState.agent.persona,
+    charter: getPersonaCharter(agentState.agent.persona),
+    counts: {
+      posts: agentState.posts.length,
+      evaluated,
+      rejected: agentState.rejectedTopics.length,
+      cycles: agentState.cycles.length
+    },
+    initializedAt: agentState.agent.createdAt,
+    uptimeSeconds: Math.floor(process.uptime()),
+    lastCycleAt: lastCycle?.ranAt || null,
+    nextPublishAt: agentState.nextPublishAt || null,
+    nextPublishReason: agentState.nextPublishReason || null,
+    currentThreshold: agentState.editorialThreshold ?? DEFAULT_EDITORIAL_THRESHOLD,
+    sourceHealth: agentState.sourceHealth || {},
+    llmEnabled: process.env.LLM_ENABLED !== "false" && Boolean(process.env.ANTHROPIC_API_KEY)
+  };
+}
+
+export async function loadRejectedTopics(requestedAgentId, searchParams = new URLSearchParams()) {
+  const { agentState } = await resolveAgentForRead(requestedAgentId);
+  if (!agentState) return emptyTransparencyPayload("rejected");
+  const limit = limitFromSearchParams(searchParams);
+  return {
+    rejected: agentState.rejectedTopics.slice(0, limit).map((item) => ({
+      title: item.title,
+      url: item.url,
+      sourceName: item.sourceName || null,
+      score: item.score,
+      reason: item.reason,
+      rejectedAt: item.rejectedAt
+    }))
+  };
+}
+
+export async function loadCycles(requestedAgentId, searchParams = new URLSearchParams()) {
+  const { agentState } = await resolveAgentForRead(requestedAgentId);
+  if (!agentState) return emptyTransparencyPayload("cycles");
+  const limit = limitFromSearchParams(searchParams);
+  return {
+    cycles: agentState.cycles.slice(0, limit).map((cycle) => ({
+      id: cycle.id,
+      ranAt: cycle.ranAt,
+      status: cycle.status,
+      candidatesDiscovered: cycle.candidatesDiscovered,
+      rejectedCount: cycle.rejectedCount,
+      acceptedCount: cycle.acceptedCount,
+      editorialThreshold: cycle.editorialThreshold,
+      decidedBy: cycle.decidedBy,
+      model: cycle.model,
+      tokensUsed: cycle.tokensUsed,
+      publishedPostId: cycle.publishedPostId,
+      nextPublishReason: cycle.nextPublishReason,
+      sourcesQueried: cycle.sourcesQueried || [],
+      sourcesFailed: cycle.sourcesFailed || []
+    }))
+  };
+}
+
+export async function loadMemorySnapshot(requestedAgentId) {
+  const { agentState } = await resolveAgentForRead(requestedAgentId);
+  if (!agentState) return emptyTransparencyPayload("memory");
+  return {
+    themes: agentState.memory?.themes || {},
+    entities: agentState.memory?.entities || {},
+    coveredUrls: [...new Set(agentState.posts.flatMap((post) => post.sources || []))]
+  };
+}
+
+export async function loadActivityLog(requestedAgentId, searchParams = new URLSearchParams()) {
+  const { agentState } = await resolveAgentForRead(requestedAgentId);
+  if (!agentState) return emptyTransparencyPayload("log");
+  const limit = limitFromSearchParams(searchParams);
+  return { log: (agentState.activityLog || []).slice(0, limit) };
 }
 
 export function startBackgroundWorker() {

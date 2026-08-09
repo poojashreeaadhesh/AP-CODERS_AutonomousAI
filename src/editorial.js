@@ -188,6 +188,7 @@ export function evaluateTopics(topics, state, now = new Date(), threshold = DEFA
     .map((item) => ({
       title: item.topic.title,
       url: item.topic.url,
+      sourceName: item.topic.sourceName,
       score: Number(item.score.toFixed(2)),
       rejectedAt: now.toISOString(),
       reason: item.rejectionReasons[0] || "it did not clear the editorial threshold"
@@ -245,6 +246,7 @@ function llmRejections({ decision, candidates, now, fallbackRejected }) {
     rejected.push({
       title: candidate.topic.title,
       url: candidate.topic.url,
+      sourceName: candidate.topic.sourceName,
       score: Number(candidate.score.toFixed(2)),
       rejectedAt: now.toISOString(),
       reason: String(item.reason || "Claude rejected this candidate as lower priority").slice(0, 300)

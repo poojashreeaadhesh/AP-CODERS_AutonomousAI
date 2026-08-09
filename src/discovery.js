@@ -150,3 +150,42 @@ export async function discoverTopics(persona) {
 
   return dedupeTopics(topics).slice(0, 30);
 }
+
+export async function discoverTopicsWithTelemetry(persona) {
+  const queries = domainQueries(persona.domain).slice(0, 3);
+  const jobs = [];
+
+  for (const query of queries) {
+    jobs.push({ sourceName: "Hacker News", query, run: () => discoverFromHackerNews(query) });
+  }
+
+  jobs.push({ sourceName: "Dev.to", query: queries[0], run: () => discoverFromDevTo(queries[0]) });
+  jobs.push({ sourceName: "arXiv", query: queries[0], run: () => discoverFromArxiv(queries[0]) });
+
+  const results = await Promise.allSettled(jobs.map((job) => job.run()));
+  const sourceResults = results.map((result, index) => {
+    const job = jobs[index];
+    if (result.status === "fulfilled") {
+      return {
+        sourceName: job.sourceName,
+        query: job.query,
+        status: "ok",
+        count: result.value.length
+      };
+    }
+
+    return {
+      sourceName: job.sourceName,
+      query: job.query,
+      status: "failed",
+      count: 0,
+      error: result.reason?.message || "source failed"
+    };
+  });
+
+  const topics = dedupeTopics(
+    results.flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+  ).slice(0, 30);
+
+  return { topics, sourceResults };
+}

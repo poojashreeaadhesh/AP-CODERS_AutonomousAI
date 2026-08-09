@@ -88,3 +88,25 @@ Codex implemented the T7 memory and rationale plan:
 - Related post links for continuity.
 - Structured `rationaleDetail` while preserving the required `rationale` string.
 - Tests for T7 memory and rationale behavior.
+
+### Prompt
+
+The user asked Codex to move from T7 to T8: the transparency layer.
+
+### AI Assistance
+
+Codex implemented the T8 transparency layer:
+
+- Added discovery telemetry so cycles can record queried and failed sources.
+- Added a persisted activity log on agent state with capped append-only entries.
+- Logged initialization, discovery starts/source failures, evaluated topics, rejected topics, published posts, quiet cycles, schedule updates, and LLM fallback events.
+- Added read-only transparency payloads for status, rejected topics, cycle history, memory, and activity log.
+- Added route-table entries for `/api/agent/status`, `/api/agent/rejected`, `/api/agent/cycles`, `/api/agent/memory`, and `/api/agent/log`.
+- Added tests proving the endpoints return shaped JSON before initialization, expose live-agent transparency data, do not trigger discovery when a cycle is due, and persist activity logs across restarts.
+
+### Implemented Features
+
+- Persisted activity log.
+- Status, rejected-topic, cycle-history, memory, and log endpoints.
+- Source telemetry in cycle records.
+- Read-only transparency endpoint tests.

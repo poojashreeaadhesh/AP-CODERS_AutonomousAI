@@ -330,16 +330,16 @@ test: near-duplicate detection and memory continuity
 - **Redaction:** no API keys, no full prompts containing keys, no env dump.
 
 ### Acceptance criteria
-- [ ] All five endpoints return 200 with valid JSON for a live agent, and a sane empty shape (not 404/500) for an uninitialized one
-- [ ] `/status` shows a `nextPublishAt` in the future and a non-empty `nextPublishReason`
-- [ ] `/cycles` includes at least one entry with `status: "no_publishable_topic"` after a quiet cycle
-- [ ] `/log` contains a `post.published` entry whose `data.postId` matches a real post in `/feed`
-- [ ] `/rejected` returns ≥10 entries after several cycles, each with a non-empty human-readable reason
-- [ ] Every `/memory` theme's `postIds` resolve to real posts
-- [ ] Activity log survives a process restart
-- [ ] None of the endpoints trigger a discovery cycle (verified by asserting no outbound fetch during 20 rapid calls)
-- [ ] No response contains an API key-looking value or any env var value
-- [ ] Adding one of these endpoints required exactly one route-table entry (confirms T2's refactor holds)
+- [x] All five endpoints return 200 with valid JSON for a live agent, and a sane empty shape (not 404/500) for an uninitialized one
+- [x] `/status` shows a `nextPublishAt` in the future and a non-empty `nextPublishReason`
+- [x] `/cycles` includes at least one entry with `status: "no_publishable_topic"` after a quiet cycle
+- [x] `/log` contains a `post.published` entry whose `data.postId` matches a real post in `/feed`
+- [x] `/rejected` returns ≥10 entries after several cycles, each with a non-empty human-readable reason
+- [x] Every `/memory` theme's `postIds` resolve to real posts
+- [x] Activity log survives a process restart
+- [x] None of the endpoints trigger a discovery cycle (verified by asserting no outbound fetch during 20 rapid calls)
+- [x] No response contains an API key-looking value or any env var value
+- [x] Adding one of these endpoints required exactly one route-table entry (confirms T2's refactor holds)
 
 ### Commits
 ```

@@ -1,6 +1,16 @@
 import http from "node:http";
 import { fileURLToPath } from "node:url";
-import { getHealthSnapshot, initializeAgent, loadFeedState, startBackgroundWorker } from "./autonomousAgent.js";
+import {
+  getHealthSnapshot,
+  initializeAgent,
+  loadActivityLog,
+  loadAgentStatus,
+  loadCycles,
+  loadFeedState,
+  loadMemorySnapshot,
+  loadRejectedTopics,
+  startBackgroundWorker
+} from "./autonomousAgent.js";
 import { assertDurableStorage } from "./store.js";
 import { readRequestJson, sendJson } from "./utils.js";
 
@@ -12,7 +22,12 @@ async function handleRoot(request, response) {
     endpoints: {
       init: "POST /api/agent/init",
       feed: "GET /api/agent/feed?agentId=...",
-      health: "GET /health"
+      health: "GET /health",
+      status: "GET /api/agent/status?agentId=...",
+      rejected: "GET /api/agent/rejected?agentId=...",
+      cycles: "GET /api/agent/cycles?agentId=...",
+      memory: "GET /api/agent/memory?agentId=...",
+      log: "GET /api/agent/log?agentId=..."
     }
   });
 }
@@ -49,11 +64,53 @@ async function handleFeed(request, response, url) {
   }
 }
 
+async function handleTransparency(request, response, url, loader) {
+  try {
+    const payload = await loader(url.searchParams.get("agentId"), url.searchParams);
+    sendJson(response, 200, payload);
+  } catch (error) {
+    console.error(`Transparency endpoint failed for ${url.pathname}:`, error.message);
+    const emptyByPath = {
+      "/api/agent/status": await loadAgentStatus(null),
+      "/api/agent/rejected": { rejected: [] },
+      "/api/agent/cycles": { cycles: [] },
+      "/api/agent/memory": { themes: {}, entities: {}, coveredUrls: [] },
+      "/api/agent/log": { log: [] }
+    };
+    sendJson(response, 200, emptyByPath[url.pathname] || {});
+  }
+}
+
 const ROUTES = [
   { method: "GET", path: "/", handler: handleRoot },
   { method: "GET", path: "/health", handler: handleHealth },
   { method: "POST", path: "/api/agent/init", handler: handleInit },
-  { method: "GET", path: "/api/agent/feed", handler: handleFeed }
+  { method: "GET", path: "/api/agent/feed", handler: handleFeed },
+  {
+    method: "GET",
+    path: "/api/agent/status",
+    handler: (request, response, url) => handleTransparency(request, response, url, loadAgentStatus)
+  },
+  {
+    method: "GET",
+    path: "/api/agent/rejected",
+    handler: (request, response, url) => handleTransparency(request, response, url, loadRejectedTopics)
+  },
+  {
+    method: "GET",
+    path: "/api/agent/cycles",
+    handler: (request, response, url) => handleTransparency(request, response, url, loadCycles)
+  },
+  {
+    method: "GET",
+    path: "/api/agent/memory",
+    handler: (request, response, url) => handleTransparency(request, response, url, loadMemorySnapshot)
+  },
+  {
+    method: "GET",
+    path: "/api/agent/log",
+    handler: (request, response, url) => handleTransparency(request, response, url, loadActivityLog)
+  }
 ];
 
 async function handleRequest(request, response) {

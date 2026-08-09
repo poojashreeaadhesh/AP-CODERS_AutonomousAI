@@ -27,6 +27,8 @@ function normalizeAgentState(agentState) {
     rejectedTopics: agentState.rejectedTopics || [],
     seenTopics: agentState.seenTopics || [],
     memory: agentState.memory || { themes: {}, entities: {} },
+    sourceHealth: agentState.sourceHealth || {},
+    activityLog: agentState.activityLog || [],
     cycles: agentState.cycles || []
   };
 }

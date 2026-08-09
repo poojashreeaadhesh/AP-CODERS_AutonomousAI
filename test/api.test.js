@@ -9,7 +9,8 @@ import path from "node:path";
 process.env.DATA_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "aic-api-test-"));
 
 const { createServer } = await import("../src/server.js");
-const { clearStateForTests } = await import("../src/store.js");
+const { createInitialState, runPublishingCycle } = await import("../src/autonomousAgent.js");
+const { clearStateForTests, saveStore, withStore } = await import("../src/store.js");
 
 async function withServer(fn) {
   await clearStateForTests();
@@ -97,5 +98,140 @@ test("health endpoint reports the documented fields", async () => {
     assert.equal(typeof body.posts, "number");
     assert.ok("lastCycleAt" in body);
     assert.ok("nextPublishAt" in body);
+  });
+});
+
+async function seedTransparentAgent({ due = false } = {}) {
+  const state = createInitialState({ name: "Ada", domain: "AI Security" });
+  await runPublishingCycle(
+    state,
+    [
+      {
+        title: "Prompt injection benchmark exposes risky agent tool calls",
+        url: "https://example.com/prompt-injection",
+        sourceName: "Hacker News",
+        publishedAt: "2026-08-08T08:00:00Z",
+        summary: "AI security researchers discuss prompt injection and agent tool risk.",
+        signals: { points: 60, comments: 20 }
+      }
+    ],
+    new Date("2026-08-08T10:00:00Z")
+  );
+  await runPublishingCycle(
+    state,
+    Array.from({ length: 12 }, (_, index) => ({
+      title: `Top ${index + 1} coupon tricks for weekend shopping`,
+      url: `https://example.com/coupon-${index + 1}`,
+      sourceName: "Dev.to",
+      publishedAt: "2026-08-08T09:00:00Z",
+      summary: "Sponsored shopping content.",
+      signals: { points: 40, comments: 20 }
+    })),
+    new Date("2026-08-08T11:00:00Z")
+  );
+  state.nextPublishAt = due
+    ? "2000-01-01T00:00:00.000Z"
+    : new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  await saveStore({ version: 2, agents: { [state.agent.id]: state } });
+  return state.agent.id;
+}
+
+test("transparency endpoints return empty shaped payloads before initialization", async () => {
+  await withServer(async (baseUrl) => {
+    const endpoints = {
+      status: "/api/agent/status?agentId=missing",
+      rejected: "/api/agent/rejected?agentId=missing",
+      cycles: "/api/agent/cycles?agentId=missing",
+      memory: "/api/agent/memory?agentId=missing",
+      log: "/api/agent/log?agentId=missing"
+    };
+
+    for (const [name, pathName] of Object.entries(endpoints)) {
+      const response = await fetch(`${baseUrl}${pathName}`);
+      const body = await response.json();
+      assert.equal(response.status, 200, `${name} should return 200`);
+      assert.equal(body.error, undefined);
+    }
+  });
+});
+
+test("transparency endpoints expose status, rejections, cycles, memory, and activity log for a live agent", async () => {
+  await withServer(async (baseUrl) => {
+    const agentId = await seedTransparentAgent();
+
+    const [status, rejected, cycles, memory, log, feed] = await Promise.all(
+      [
+        `/api/agent/status?agentId=${agentId}`,
+        `/api/agent/rejected?agentId=${agentId}&limit=20`,
+        `/api/agent/cycles?agentId=${agentId}&limit=20`,
+        `/api/agent/memory?agentId=${agentId}`,
+        `/api/agent/log?agentId=${agentId}&limit=50`,
+        `/api/agent/feed?agentId=${agentId}`
+      ].map(async (pathName) => {
+        const response = await fetch(`${baseUrl}${pathName}`);
+        assert.equal(response.status, 200, `${pathName} should return 200`);
+        return response.json();
+      })
+    );
+
+    assert.equal(status.persona.domain, "AI Security");
+    assert.ok(status.nextPublishAt);
+    assert.ok(status.nextPublishReason);
+    assert.equal(status.counts.posts, 1);
+    assert.equal(status.counts.cycles, 2);
+    assert.equal(status.llmEnabled, false);
+
+    assert.ok(rejected.rejected.length >= 10);
+    assert.ok(rejected.rejected.every((item) => item.reason));
+    assert.ok(cycles.cycles.some((cycle) => cycle.status === "no_publishable_topic"));
+
+    const postIds = new Set(feed.posts.map((post) => post.id));
+    for (const entry of Object.values(memory.themes)) {
+      assert.ok(entry.postIds.every((id) => postIds.has(id)));
+    }
+
+    const publishedEvent = log.log.find((entry) => entry.event === "post.published");
+    assert.ok(publishedEvent);
+    assert.ok(postIds.has(publishedEvent.data.postId));
+  });
+});
+
+test("transparency endpoints are read-only and do not trigger discovery even when a cycle is due", async () => {
+  await withServer(async (baseUrl) => {
+    const agentId = await seedTransparentAgent({ due: true });
+    const originalFetch = globalThis.fetch;
+    let outboundFetches = 0;
+
+    globalThis.fetch = async (input, init) => {
+      const target = String(input?.url || input);
+      if (!target.startsWith(baseUrl)) {
+        outboundFetches += 1;
+        throw new Error("unexpected outbound fetch");
+      }
+      return originalFetch(input, init);
+    };
+
+    try {
+      const paths = [
+        `/api/agent/status?agentId=${agentId}`,
+        `/api/agent/rejected?agentId=${agentId}`,
+        `/api/agent/cycles?agentId=${agentId}`,
+        `/api/agent/memory?agentId=${agentId}`,
+        `/api/agent/log?agentId=${agentId}`
+      ];
+
+      for (let i = 0; i < 4; i += 1) {
+        await Promise.all(paths.map((pathName) => fetch(`${baseUrl}${pathName}`).then((response) => response.json())));
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    assert.equal(outboundFetches, 0);
+
+    await withStore((store) => {
+      assert.equal(store.agents[agentId].cycles.length, 2);
+      return { save: false };
+    });
   });
 });

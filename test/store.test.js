@@ -111,3 +111,27 @@ test("posts persist across a simulated process restart (memory cache cleared, di
   const reloaded = await loadStore();
   assert.equal(reloaded.agents["agent-1"].posts.length, 2);
 });
+
+test("activity log persists across a simulated process restart", async () => {
+  await withStore((store) => {
+    store.agents["agent-1"] = {
+      agent: { id: "agent-1", createdAt: "2026-08-08T00:00:00.000Z" },
+      posts: [],
+      activityLog: [
+        {
+          at: "2026-08-08T00:00:00.000Z",
+          level: "info",
+          event: "post.published",
+          message: "published p-1",
+          data: { postId: "p-1" }
+        }
+      ]
+    };
+  });
+
+  resetMemoryCacheForTests();
+
+  const reloaded = await loadStore();
+  assert.equal(reloaded.agents["agent-1"].activityLog.length, 1);
+  assert.equal(reloaded.agents["agent-1"].activityLog[0].event, "post.published");
+});

@@ -273,10 +273,7 @@ for the feature-by-feature log. Raw prompt artifacts remain in
 [PROMPTS/](PROMPTS/).
 
 ## Demo Recording
-
-A short screen recording is still a pending submission asset. The intended flow
-is dashboard, countdown/status, new post, expanded rationale, rejected list, and
-cycle timeline.
+ [Video URL]:(https://youtu.be/F95lmoqqh-A)
 
 ## Known Limitations And Next Steps
 

@@ -8,6 +8,9 @@ An autonomous AI and technology persona that discovers live topics, judges what
 is worth publishing, writes in a consistent voice, remembers prior coverage, and
 keeps posting after a single initialization call.
 
+## Demo Recording
+ [Video URL]:https://youtu.be/F95lmoqqh-A
+
 ## What Judges Should Look At First
 
 1. Open the dashboard at `/` on the live demo URL.

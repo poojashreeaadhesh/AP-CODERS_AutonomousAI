@@ -273,7 +273,7 @@ for the feature-by-feature log. Raw prompt artifacts remain in
 [PROMPTS/](PROMPTS/).
 
 ## Demo Recording
- [Video URL]:(https://youtu.be/F95lmoqqh-A)
+ [Video URL]:https://youtu.be/F95lmoqqh-A
 
 ## Known Limitations And Next Steps
 

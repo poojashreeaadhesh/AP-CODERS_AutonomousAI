@@ -17,8 +17,20 @@ function compactTopic(candidate) {
 function recentTitles(state) {
   return state.posts.slice(0, 10).map((post) => ({
     id: post.id,
-    title: post.text.split("\n")[0].replace(/^(Watching|Worth noting):\s*/i, "").slice(0, 160),
+    title: (post.sourceTitle || post.text.split("\n")[0])
+      .replace(/^(Watching|Worth noting|Signal from this cycle|The useful clue|This deserves scrutiny):\s*/i, "")
+      .slice(0, 160),
     opening: post.text.split(/\s+/).slice(0, 12).join(" ")
+  }));
+}
+
+function relatedPriorPosts(selected) {
+  return (selected.memoryHints?.relatedPosts || []).map((post) => ({
+    id: post.id,
+    createdAt: post.createdAt,
+    title: post.title,
+    themes: post.themes || [],
+    entities: post.entities || []
   }));
 }
 
@@ -86,6 +98,9 @@ export function writerPrompt({ charter, selected, state, rejected }) {
     "Recent posts to avoid structurally repeating:",
     JSON.stringify(recentTitles(state), null, 2),
     "",
+    "Related prior posts, if any. Reference these only when genuinely connected:",
+    JSON.stringify(relatedPriorPosts(selected), null, 2),
+    "",
     "Rejected candidates from this cycle:",
     JSON.stringify(
       rejected.slice(0, 6).map((item) => ({
@@ -114,6 +129,8 @@ export function writerPrompt({ charter, selected, state, rejected }) {
     "- Do not use a LinkedIn hype cadence.",
     "- Do not use em dash-heavy prose.",
     "- Vary the first sentence from recent posts.",
+    "- If related prior posts are supplied, make one concise continuity reference without repeating the earlier take.",
+    "- If no related prior posts are supplied, do not pretend this continues earlier coverage.",
     "- Do not start with any opening listed in openingsToAvoid.",
     "- Never include API keys or private environment details."
   ].join("\n");

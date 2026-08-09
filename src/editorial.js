@@ -1,4 +1,5 @@
-import { hoursBetween, normalizeText, similarity } from "./utils.js";
+import { displayTitleFromPost } from "./memory.js";
+import { hoursBetween, normalizeText, similarity, titleFingerprint } from "./utils.js";
 import { callClaudeJson, getLlmModel, isLlmEnabled } from "./llm.js";
 import { getPersonaCharter } from "./persona.js";
 import { editorialDecisionPrompt } from "./prompts.js";
@@ -72,7 +73,12 @@ function scoreTopic(topic, state, now = new Date()) {
   const combined = `${title} ${summary}`;
   const personaTerms = domainTerms(state.agent.persona.domain);
   const specificBeatTerms = beatTerms(state.agent.persona.domain);
-  const previousTexts = state.posts.map((post) => `${post.text} ${post.rationale}`);
+  const previousTitles = state.posts.map((post) => displayTitleFromPost(post)).filter(Boolean);
+  const previousFingerprints = new Set(
+    state.posts
+      .map((post) => post.titleFingerprint || titleFingerprint(displayTitleFromPost(post)))
+      .filter(Boolean)
+  );
 
   let score = 0;
   const reasons = [];
@@ -137,10 +143,13 @@ function scoreTopic(topic, state, now = new Date()) {
     rejectionReasons.push("it was considered in an earlier discovery cycle");
   }
 
-  const repeated = previousTexts.some((text) => similarity(topic.title, text) > 0.32);
+  const topicFingerprint = titleFingerprint(topic.title);
+  const repeated =
+    previousFingerprints.has(topicFingerprint) ||
+    previousTitles.some((title) => similarity(topic.title, title) > 0.45);
   if (repeated) {
-    score -= 4;
-    rejectionReasons.push("it is too similar to earlier published content");
+    score -= 8;
+    rejectionReasons.push("it appears to rehash information already covered in memory");
   } else {
     score += 1;
     reasons.push("it adds a new angle to the feed memory");
@@ -267,6 +276,22 @@ function annotateFallback(result) {
   };
 }
 
+function enrichWhyOverOthers(items, candidatesById) {
+  return (items || [])
+    .map((item) => {
+      const candidate = candidatesById.get(item.id);
+      if (!candidate) return null;
+      return {
+        id: item.id,
+        title: candidate.topic.title,
+        url: candidate.topic.url,
+        score: Number(candidate.score.toFixed(2)),
+        reason: String(item.reason || "lower editorial priority").slice(0, 300)
+      };
+    })
+    .filter(Boolean);
+}
+
 export async function evaluateTopicsWithLLM(
   topics,
   state,
@@ -322,7 +347,7 @@ export async function evaluateTopicsWithLLM(
         editorialScore: Number(Number(decision.editorialScore).toFixed(2)),
         whySelected: decision.whySelected.trim(),
         whyNow: decision.whyNow.trim(),
-        whyOverOthers: decision.whyOverOthers || [],
+        whyOverOthers: enrichWhyOverOthers(decision.whyOverOthers, candidatesById),
         decidedBy: "llm",
         model,
         tokensUsed

@@ -64,3 +64,27 @@ The human directed the project to continue after T5 and start T6.
 - Persona charter and prompt-template files for faster future changes.
 - LLM metadata on generated posts.
 - Test coverage for the critical fallback paths.
+
+### Prompt
+
+The user asked Codex to move from T6 to T7: rationale and memory upgrades.
+
+### AI Assistance
+
+Codex implemented the T7 memory and rationale plan:
+
+- Replaced whole-post duplicate comparison with title-to-title similarity and title fingerprints.
+- Added a memory module for theme/entity hints, related-post lookup, memory indexing, and structured rationale detail.
+- Added `memory.themes` and `memory.entities` to agent state.
+- Added `sourceTitle`, `titleFingerprint`, `themes`, `entities`, `relatedPostIds`, and `rationaleDetail` to generated posts.
+- Updated the writer prompt to pass genuinely related prior posts and ask for continuity only when relevant.
+- Updated the fallback writer to reference prior related coverage instead of mechanically quoting the previous post.
+- Added tests for near-duplicate detection, same-title repetition rejection, no false-positive duplicate rejection, memory indexing, related post links, and rationale details.
+
+### Implemented Features
+
+- Near-duplicate title rejection.
+- Theme/entity memory index.
+- Related post links for continuity.
+- Structured `rationaleDetail` while preserving the required `rationale` string.
+- Tests for T7 memory and rationale behavior.

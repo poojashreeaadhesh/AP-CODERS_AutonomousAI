@@ -194,5 +194,6 @@ test("Claude writer returns varied text with model and token metadata", async ()
   assert.ok(post.tokensUsed > 0);
   assert.equal(post.editorialScore, 8.4);
   assert.notEqual(post.text.split(/\s+/).slice(0, 8).join(" "), "Watching: New LLM prompt injection benchmark exposes agent");
-  assert.deepEqual(post.themes, ["prompt-injection", "sandboxing"]);
+  assert.ok(post.themes.includes("prompt-injection"));
+  assert.ok(post.themes.includes("sandboxing"));
 });

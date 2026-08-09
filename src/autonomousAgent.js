@@ -1,5 +1,6 @@
 import { DEFAULT_EDITORIAL_THRESHOLD, evaluateTopicsWithLLM } from "./editorial.js";
 import { discoverTopics } from "./discovery.js";
+import { buildMemoryHints, updateMemoryWithPost } from "./memory.js";
 import { loadStore, withStore } from "./store.js";
 import { createId, nowIso } from "./utils.js";
 import { writePostWithLLM } from "./writer.js";
@@ -177,6 +178,7 @@ export function createInitialState(personaInput) {
     posts: [],
     rejectedTopics: [],
     seenTopics: [],
+    memory: { themes: {}, entities: {} },
     cycles: [],
     nextPublishAt: createdAt,
     nextPublishReason: "initial cycle scheduled immediately after initialization",
@@ -236,7 +238,13 @@ export async function runPublishingCycle(agentState, topics, now = new Date()) {
   };
 
   if (evaluation.selected) {
-    const post = await writePostWithLLM(evaluation.selected, agentState, now, evaluation.rejected);
+    evaluation.selected.memoryHints = buildMemoryHints(agentState, evaluation.selected.topic);
+    const post = await writePostWithLLM(evaluation.selected, agentState, now, evaluation.rejected, {
+      cycleId: cycle.id,
+      candidatesEvaluated: topics.length,
+      sourcesQueried: [...new Set(topics.map((topic) => topic.sourceName).filter(Boolean))]
+    });
+    updateMemoryWithPost(agentState, post);
     agentState.posts.unshift(post);
     cycle.publishedPostId = post.id;
     cycle.decidedBy = post.decidedBy;

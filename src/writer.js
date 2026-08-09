@@ -1,5 +1,6 @@
 import { createId } from "./utils.js";
 import { callClaudeJson, getLlmModel, isLlmEnabled } from "./llm.js";
+import { buildMemoryHints, memoryPostFields } from "./memory.js";
 import { getPersonaCharter, includesBannedPhrasing, startsWithAvoidedOpening } from "./persona.js";
 import { writerPrompt } from "./prompts.js";
 
@@ -25,19 +26,20 @@ function personaAngle(domain) {
   return "The question I keep coming back to is what changes for builders when this becomes ordinary infrastructure.";
 }
 
-function continuityLine(state) {
+function continuityLine(state, memoryHints) {
+  const related = memoryHints?.relatedPosts?.[0];
+  if (related) {
+    return `This connects to prior coverage of "${related.title}":`;
+  }
+
   if (state.posts.length === 0) {
     return "First note in this feed:";
   }
 
-  const last = state.posts[0];
-  const short = last.text
-    .split("\n")[0]
-    .replace(/^(Watching|Worth noting|Signal from this cycle|The useful clue|This deserves scrutiny):\s*/i, "");
-  return `Continuing the thread from "${short.slice(0, 72)}":`;
+  return "New thread in this feed:";
 }
 
-export function writePost(selected, state, createdAt = new Date(), rejected = []) {
+export function writePost(selected, state, createdAt = new Date(), rejected = [], context = {}) {
   const { topic, reasons } = selected;
   const persona = state.agent.persona;
   const title = topic.title.replace(/\s+/g, " ").trim();
@@ -45,11 +47,12 @@ export function writePost(selected, state, createdAt = new Date(), rejected = []
   const angle = personaAngle(persona.domain);
   const openings = ["Signal from this cycle:", "The useful clue:", "This deserves scrutiny:"];
   const firstLine = openings[state.posts.length % openings.length];
+  const memoryHints = selected.memoryHints || buildMemoryHints(state, topic);
 
   const text = [
     `${firstLine} ${title}`,
     "",
-    `${continuityLine(state)} ${sourceName} is a useful signal for ${persona.domain} because it points to a concrete shift, not just another broad AI claim.`,
+    `${continuityLine(state, memoryHints)} ${sourceName} is a useful signal for ${persona.domain} because it points to a concrete shift, not just another broad AI claim.`,
     "",
     `${angle} My read: teams should treat this as a prompt to tighten evaluation, deployment assumptions, and user-facing explanations before the story becomes conventional wisdom.`,
     "",
@@ -73,7 +76,7 @@ export function writePost(selected, state, createdAt = new Date(), rejected = []
 
   const rationale = rationaleParts.join(" ");
 
-  return {
+  const post = {
     id: createId("p"),
     createdAt: createdAt.toISOString(),
     text,
@@ -83,6 +86,17 @@ export function writePost(selected, state, createdAt = new Date(), rejected = []
     model: selected.model || "heuristic-template",
     tokensUsed: selected.tokensUsed || 0,
     editorialScore: Number(Number(selected.editorialScore ?? selected.score ?? 0).toFixed(2))
+  };
+
+  return {
+    ...post,
+    ...memoryPostFields({
+      selected: { ...selected, memoryHints },
+      state,
+      post,
+      context,
+      rejected
+    })
   };
 }
 
@@ -102,14 +116,16 @@ function validateWriterJson(value, charter) {
   if (startsWithAvoidedOpening(value.text, charter)) throw new Error("text reuses an avoided opening");
 }
 
-export async function writePostWithLLM(selected, state, createdAt = new Date(), rejected = []) {
-  const fallback = writePost(selected, state, createdAt, rejected);
+export async function writePostWithLLM(selected, state, createdAt = new Date(), rejected = [], context = {}) {
+  const memoryHints = selected.memoryHints || buildMemoryHints(state, selected.topic);
+  const selectedWithMemory = { ...selected, memoryHints };
+  const fallback = writePost(selectedWithMemory, state, createdAt, rejected, context);
   if (!isLlmEnabled()) {
     return {
       ...fallback,
       decidedBy: "heuristic-fallback",
       model: "heuristic-template",
-      tokensUsed: selected.tokensUsed || 0
+      tokensUsed: selectedWithMemory.tokensUsed || 0
     };
   }
 
@@ -117,33 +133,44 @@ export async function writePostWithLLM(selected, state, createdAt = new Date(), 
 
   try {
     const { value, model, tokensUsed } = await callClaudeJson({
-      prompt: writerPrompt({ charter, selected, state, rejected }),
+      prompt: writerPrompt({ charter, selected: selectedWithMemory, state, rejected }),
       validate: (candidate) => validateWriterJson(candidate, charter),
       maxTokens: 1600
     });
 
-    return {
+    const post = {
       id: createId("p"),
       createdAt: createdAt.toISOString(),
       text: value.text.trim(),
       rationale: value.rationale.trim(),
-      sources: [selected.topic.url],
-      decidedBy: selected.decidedBy === "llm" ? "llm" : "heuristic-fallback",
+      sources: [selectedWithMemory.topic.url],
+      decidedBy: selectedWithMemory.decidedBy === "llm" ? "llm" : "heuristic-fallback",
       writerBy: "llm",
       model,
-      tokensUsed: (selected.tokensUsed || 0) + tokensUsed,
-      editorialScore: Number(Number(selected.editorialScore ?? selected.score ?? 0).toFixed(2)),
-      themes: Array.isArray(value.themes) ? value.themes.slice(0, 8) : [],
-      entities: Array.isArray(value.entities) ? value.entities.slice(0, 8) : []
+      tokensUsed: (selectedWithMemory.tokensUsed || 0) + tokensUsed,
+      editorialScore: Number(Number(selectedWithMemory.editorialScore ?? selectedWithMemory.score ?? 0).toFixed(2))
+    };
+
+    return {
+      ...post,
+      ...memoryPostFields({
+        selected: selectedWithMemory,
+        state,
+        post,
+        writerThemes: Array.isArray(value.themes) ? value.themes.slice(0, 8) : [],
+        writerEntities: Array.isArray(value.entities) ? value.entities.slice(0, 8) : [],
+        context,
+        rejected
+      })
     };
   } catch (error) {
     console.warn(`LLM writer fallback: ${error.message}`);
     return {
       ...fallback,
-      decidedBy: selected.decidedBy || "heuristic-fallback",
+      decidedBy: selectedWithMemory.decidedBy || "heuristic-fallback",
       writerBy: "heuristic-fallback",
-      model: selected.model || getLlmModel(),
-      tokensUsed: selected.tokensUsed || 0
+      model: selectedWithMemory.model || getLlmModel(),
+      tokensUsed: selectedWithMemory.tokensUsed || 0
     };
   }
 }

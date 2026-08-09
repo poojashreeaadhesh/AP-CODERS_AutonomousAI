@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 export function nowIso() {
   return new Date().toISOString();
@@ -56,7 +56,14 @@ export function similarity(left, right) {
     if (b.has(token)) overlap += 1;
   }
 
-  return overlap / Math.max(a.size, b.size);
+  const union = new Set([...a, ...b]).size;
+  return overlap / union;
+}
+
+export function titleFingerprint(title) {
+  const tokens = [...new Set(tokenize(title))].sort();
+  if (tokens.length === 0) return "";
+  return createHash("sha256").update(tokens.join(" ")).digest("hex").slice(0, 16);
 }
 
 export function hoursBetween(dateIso, now = new Date()) {

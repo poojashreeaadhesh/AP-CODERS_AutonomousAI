@@ -288,15 +288,15 @@ test: malformed and rate-limited model responses degrade gracefully
 - Add **"is this actually new information or a rehash of something already covered"** as a first-class rejection reason, backed by the theme index.
 
 ### Acceptance criteria
-- [ ] New test: `similarity("AI model escapes sandbox in security test", "Kimi K3 AI model escapes isolated sandbox during security test") > 0.45` — the near-duplicate is caught (this case fails on the current implementation)
-- [ ] New test: a topic with the same title but a different URL than an already-published post is **rejected** with a repetition reason
-- [ ] New test: an unrelated topic is **not** rejected as a duplicate (no false positives)
-- [ ] After 5 posts, `memory.themes` is non-empty and every `postIds` entry references a real post
-- [ ] At least one post in a 10-post feed has non-empty `relatedPostIds`, and every referenced id exists in the feed
-- [ ] A post with non-empty `relatedPostIds` contains a textual reference to the prior coverage (manual read of 3 examples)
-- [ ] Every post has `rationaleDetail` with all documented keys present and non-empty (`whyOverOthers` may be `[]` only when exactly one candidate existed)
-- [ ] `rationale` (the string) remains present, human-readable, and materially different per post
-- [ ] `whyOverOthers` entries correspond to topics that were actually evaluated in that cycle (cross-check against the cycle record)
+- [x] New test: `similarity("AI model escapes sandbox in security test", "Kimi K3 AI model escapes isolated sandbox during security test") > 0.45` — the near-duplicate is caught (this case fails on the current implementation)
+- [x] New test: a topic with the same title but a different URL than an already-published post is **rejected** with a repetition reason
+- [x] New test: an unrelated topic is **not** rejected as a duplicate (no false positives)
+- [x] After 5 posts, `memory.themes` is non-empty and every `postIds` entry references a real post
+- [x] At least one post in a 10-post feed has non-empty `relatedPostIds`, and every referenced id exists in the feed
+- [x] A post with non-empty `relatedPostIds` contains a textual reference to the prior coverage (manual read of 3 examples)
+- [x] Every post has `rationaleDetail` with all documented keys present and non-empty (`whyOverOthers` may be `[]` only when exactly one candidate existed)
+- [x] `rationale` (the string) remains present, human-readable, and materially different per post
+- [x] `whyOverOthers` entries correspond to topics that were actually evaluated in that cycle (cross-check against the cycle record)
 
 ### Commits
 ```

@@ -20,24 +20,43 @@ function emptyStore() {
   return { version: CURRENT_VERSION, agents: {} };
 }
 
+function normalizeAgentState(agentState) {
+  return {
+    ...agentState,
+    posts: agentState.posts || [],
+    rejectedTopics: agentState.rejectedTopics || [],
+    seenTopics: agentState.seenTopics || [],
+    memory: agentState.memory || { themes: {}, entities: {} },
+    cycles: agentState.cycles || []
+  };
+}
+
 // v1 stored a single agent at the top level: { agent, posts, rejectedTopics, ... }.
 // v2 stores a map of agents so more than one persona can run at once.
 function migrate(raw) {
   if (!raw || typeof raw !== "object") return emptyStore();
-  if (raw.version === CURRENT_VERSION && raw.agents) return raw;
+  if (raw.version === CURRENT_VERSION && raw.agents) {
+    return {
+      ...raw,
+      agents: Object.fromEntries(
+        Object.entries(raw.agents).map(([id, agentState]) => [id, normalizeAgentState(agentState)])
+      )
+    };
+  }
 
   if (raw.agent?.id) {
     return {
       version: CURRENT_VERSION,
       agents: {
-        [raw.agent.id]: {
+        [raw.agent.id]: normalizeAgentState({
           agent: raw.agent,
           posts: raw.posts || [],
           rejectedTopics: raw.rejectedTopics || [],
           seenTopics: raw.seenTopics || [],
+          memory: raw.memory || { themes: {}, entities: {} },
           cycles: raw.cycles || [],
           nextPublishAt: raw.nextPublishAt || raw.agent.createdAt
-        }
+        })
       }
     };
   }

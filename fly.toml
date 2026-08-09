@@ -1,0 +1,45 @@
+# fly.toml for the Autonomous AI Creator.
+#
+# Before first deploy:
+#   fly apps create <your-app-name>          # then set `app` below to match
+#   fly volumes create agent_data --size 1 --region <primary_region>
+#   fly secrets set ANTHROPIC_API_KEY=...    # optional, only if using T6's LLM path
+#
+# Deploy with: fly deploy
+
+app = "autonomous-ai-creator"
+primary_region = "iad"
+
+[build]
+
+[env]
+  PORT = "3000"
+  DATA_DIR = "/data"
+  PUBLISH_INTERVAL_MINUTES = "75"
+  AUTONOMOUS_TICK_SECONDS = "30"
+  PUBLISH_JITTER_PCT = "0.2"
+  EDITORIAL_THRESHOLD_FLOOR = "2.0"
+  MAX_CATCHUP_POSTS = "3"
+
+[[mounts]]
+  source = "agent_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

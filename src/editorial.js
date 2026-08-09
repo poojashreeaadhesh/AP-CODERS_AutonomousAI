@@ -161,14 +161,16 @@ function scoreTopic(topic, state, now = new Date()) {
   };
 }
 
-export function evaluateTopics(topics, state, now = new Date()) {
+export const DEFAULT_EDITORIAL_THRESHOLD = 4.5;
+
+export function evaluateTopics(topics, state, now = new Date(), threshold = DEFAULT_EDITORIAL_THRESHOLD) {
   const scored = topics.map((topic) => scoreTopic(topic, state, now));
   const accepted = scored
-    .filter((item) => item.score >= 4.5)
+    .filter((item) => item.score >= threshold)
     .sort((a, b) => b.score - a.score);
 
   const rejected = scored
-    .filter((item) => item.score < 4.5)
+    .filter((item) => item.score < threshold)
     .sort((a, b) => b.score - a.score)
     .slice(0, 10)
     .map((item) => ({
@@ -182,6 +184,8 @@ export function evaluateTopics(topics, state, now = new Date()) {
   return {
     selected: accepted[0] || null,
     rejected,
-    scored
+    scored,
+    acceptedCount: accepted.length,
+    threshold
   };
 }

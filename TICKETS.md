@@ -457,6 +457,7 @@ Integration test: init → forced cycle → feed contains a valid post with rati
 - [x] README contains every section listed above
 - [x] `AI_USAGE_LOG.md` covers each shipped feature with prompt → output → what changed
 - [x] `git log --oneline | wc -l` ≥ 30 (verified locally: 37)
+- [x] Production Docker image includes the static dashboard assets under `public/`
 - [ ] Commit-history authenticity caveat remains: the early large setup commit cannot be undone, only contextualized by later granular commits and logs
 - [ ] Demo recording linked and plays
 

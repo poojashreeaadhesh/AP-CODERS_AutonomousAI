@@ -110,3 +110,26 @@ Codex implemented the T8 transparency layer:
 - Status, rejected-topic, cycle-history, memory, and log endpoints.
 - Source telemetry in cycle records.
 - Read-only transparency endpoint tests.
+
+### Prompt
+
+The user asked Codex to move from T8 to T9 and asked what to do with the leftover `First_iteration` directory.
+
+### AI Assistance
+
+Codex implemented the T9 static dashboard and inspected the leftover Claude worktree:
+
+- Added a no-build static dashboard at `/` with `public/index.html`, `public/styles.css`, and `public/app.js`.
+- Moved the JSON service descriptor from `/` to `/api`.
+- Added dashboard panels for persona identity, vitals, countdown, feed, rationale drawers, related-post links, rejected topics, cycle timeline, memory, activity log, and API contract explorer.
+- Added static file serving for dashboard assets in the existing Node server.
+- Added tests that verify `/` serves HTML, `/api` serves JSON, and dashboard assets load without a build step.
+- Ran a seeded local dashboard verification with browser automation at desktop and 768px width, checking for console errors, layout overflow, populated feed/rejected/timeline/memory/log data, rationale drawer behavior, timeline click behavior, API explorer output, and related-post anchor scrolling.
+- Confirmed `First_iteration/` contains a nested Claude worktree/archive and should not be deleted casually; added an ignore rule so it stays untracked while preserving the local archive.
+
+### Implemented Features
+
+- Static agent dashboard served at `/`.
+- `/api` service descriptor.
+- Live countdown, feed cards, rejected-topic panel, memory panel, timeline strip, activity log, and API contract explorer.
+- Dashboard server tests and browser smoke verification.

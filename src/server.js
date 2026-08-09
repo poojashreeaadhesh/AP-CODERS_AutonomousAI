@@ -1,4 +1,6 @@
 import http from "node:http";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   getHealthSnapshot,
@@ -15,8 +17,46 @@ import { assertDurableStorage } from "./store.js";
 import { readRequestJson, sendJson } from "./utils.js";
 
 const PORT = Number(process.env.PORT || 3000);
+const currentFile = fileURLToPath(import.meta.url);
+const projectRoot = path.resolve(path.dirname(currentFile), "..");
+const publicDir = path.join(projectRoot, "public");
+
+const STATIC_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml; charset=utf-8"
+};
+
+async function sendStatic(response, filePath) {
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(publicDir)) {
+    sendJson(response, 404, { error: "Not found" });
+    return;
+  }
+
+  try {
+    const body = await fs.readFile(resolved);
+    response.writeHead(200, {
+      "content-type": STATIC_TYPES[path.extname(resolved)] || "application/octet-stream",
+      "cache-control": "no-store"
+    });
+    response.end(body);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      sendJson(response, 404, { error: "Not found" });
+      return;
+    }
+    throw error;
+  }
+}
 
 async function handleRoot(request, response) {
+  await sendStatic(response, path.join(publicDir, "index.html"));
+}
+
+async function handleApiDescriptor(request, response) {
   sendJson(response, 200, {
     name: "Autonomous AI Creator",
     endpoints: {
@@ -30,6 +70,10 @@ async function handleRoot(request, response) {
       log: "GET /api/agent/log?agentId=..."
     }
   });
+}
+
+async function handlePublicAsset(request, response, url) {
+  await sendStatic(response, path.join(publicDir, url.pathname.replace(/^\//, "")));
 }
 
 async function handleHealth(request, response) {
@@ -83,6 +127,9 @@ async function handleTransparency(request, response, url, loader) {
 
 const ROUTES = [
   { method: "GET", path: "/", handler: handleRoot },
+  { method: "GET", path: "/api", handler: handleApiDescriptor },
+  { method: "GET", path: "/app.js", handler: handlePublicAsset },
+  { method: "GET", path: "/styles.css", handler: handlePublicAsset },
   { method: "GET", path: "/health", handler: handleHealth },
   { method: "POST", path: "/api/agent/init", handler: handleInit },
   { method: "GET", path: "/api/agent/feed", handler: handleFeed },
@@ -140,8 +187,6 @@ export function createServer() {
     });
   });
 }
-
-const currentFile = fileURLToPath(import.meta.url);
 
 // Start the server when this file is executed directly
 if (process.argv[1] && currentFile === process.argv[1]) {

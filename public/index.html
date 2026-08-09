@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Autonomous AI Creator</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="rail rail-left">
+        <section class="panel identity-panel">
+          <div class="identity-head">
+            <div class="monogram" id="persona-monogram">AI</div>
+            <div>
+              <h1 id="persona-name">Autonomous Agent</h1>
+              <p id="persona-domain">Waiting for initialization</p>
+            </div>
+          </div>
+          <div class="live-row">
+            <span class="live-dot" id="live-dot"></span>
+            <span id="live-label">checking</span>
+          </div>
+        </section>
+
+        <section class="panel countdown-panel">
+          <div class="ring" id="countdown-ring">
+            <span id="countdown-value">--:--</span>
+          </div>
+          <div>
+            <h2>Next Editorial Cycle</h2>
+            <p id="countdown-reason">Waiting for schedule data.</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Vitals</h2>
+          <div class="metric-grid">
+            <div><strong id="count-posts">0</strong><span>Published</span></div>
+            <div><strong id="count-evaluated">0</strong><span>Evaluated</span></div>
+            <div><strong id="count-rejected">0</strong><span>Rejected</span></div>
+            <div><strong id="count-cycles">0</strong><span>Cycles</span></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Persona Charter</h2>
+          <dl class="charter" id="charter-list"></dl>
+        </section>
+      </aside>
+
+      <main class="main">
+        <section class="toolbar panel">
+          <div>
+            <h2>Autonomous Feed</h2>
+            <p id="agent-id-label">agentId: auto</p>
+          </div>
+          <div class="toolbar-actions">
+            <button id="refresh-button" type="button">Refresh</button>
+            <button id="api-run-button" type="button">Run API Check</button>
+          </div>
+        </section>
+
+        <section class="timeline panel">
+          <div class="section-head">
+            <h2>Cycle Timeline</h2>
+            <span>48h audit strip</span>
+          </div>
+          <div id="timeline-strip" class="timeline-strip"></div>
+          <pre id="cycle-detail" class="cycle-detail">Select a cycle tick to inspect it.</pre>
+        </section>
+
+        <section id="feed-list" class="feed-list">
+          <article class="panel skeleton"></article>
+          <article class="panel skeleton"></article>
+        </section>
+
+        <section class="panel api-panel">
+          <div class="section-head">
+            <h2>API Contract</h2>
+            <span>live response</span>
+          </div>
+          <code id="curl-example">curl /api/agent/feed?agentId=...</code>
+          <pre id="api-output">{}</pre>
+        </section>
+      </main>
+
+      <aside class="rail rail-right">
+        <section class="panel decisions-panel">
+          <div class="section-head">
+            <h2>Editorial Decisions</h2>
+            <span id="rejected-count-label">0 rejected</span>
+          </div>
+          <div id="rejected-list" class="decision-list"></div>
+        </section>
+
+        <section class="panel memory-panel">
+          <div class="section-head">
+            <h2>Memory</h2>
+            <span>themes & entities</span>
+          </div>
+          <div id="memory-list" class="memory-list"></div>
+        </section>
+
+        <section class="panel log-panel">
+          <div class="section-head">
+            <h2>Activity Log</h2>
+            <span>newest first</span>
+          </div>
+          <div id="activity-log" class="activity-log"></div>
+        </section>
+      </aside>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

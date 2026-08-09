@@ -6,3 +6,4 @@ data/
 .DS_Store
 *.log
 .claude/worktrees/
+First_iteration/.claude/worktrees/

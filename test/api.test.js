@@ -101,6 +101,44 @@ test("health endpoint reports the documented fields", async () => {
   });
 });
 
+test("root serves dashboard HTML and /api serves the JSON service descriptor", async () => {
+  await withServer(async (baseUrl) => {
+    const rootResponse = await fetch(`${baseUrl}/`);
+    const html = await rootResponse.text();
+
+    assert.equal(rootResponse.status, 200);
+    assert.match(rootResponse.headers.get("content-type"), /text\/html/);
+    assert.match(html, /Autonomous AI Creator/);
+    assert.match(html, /\/app\.js/);
+
+    const apiResponse = await fetch(`${baseUrl}/api`);
+    const api = await apiResponse.json();
+
+    assert.equal(apiResponse.status, 200);
+    assert.equal(api.name, "Autonomous AI Creator");
+    assert.equal(api.endpoints.feed, "GET /api/agent/feed?agentId=...");
+  });
+});
+
+test("dashboard assets are served without a build step", async () => {
+  await withServer(async (baseUrl) => {
+    const [jsResponse, cssResponse] = await Promise.all([
+      fetch(`${baseUrl}/app.js`),
+      fetch(`${baseUrl}/styles.css`)
+    ]);
+
+    const js = await jsResponse.text();
+    const css = await cssResponse.text();
+
+    assert.equal(jsResponse.status, 200);
+    assert.match(jsResponse.headers.get("content-type"), /javascript/);
+    assert.match(js, /refreshAll/);
+    assert.equal(cssResponse.status, 200);
+    assert.match(cssResponse.headers.get("content-type"), /text\/css/);
+    assert.match(css, /@media \(max-width: 768px\)/);
+  });
+});
+
 async function seedTransparentAgent({ due = false } = {}) {
   const state = createInitialState({ name: "Ada", domain: "AI Security" });
   await runPublishingCycle(

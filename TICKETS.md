@@ -373,17 +373,17 @@ test: transparency endpoints are read-only and never 5xx
 - **Zero auth, zero modals, zero onboarding.** Nothing between the judge and the working agent.
 
 ### Acceptance criteria
-- [ ] `GET /` serves the dashboard HTML (not JSON); the service descriptor moved to `GET /api`
-- [ ] Dashboard loads with **zero console errors** and zero failed network requests
+- [x] `GET /` serves the dashboard HTML (not JSON); the service descriptor moved to `GET /api`
+- [x] Dashboard loads with **zero console errors** and zero failed network requests
 - [ ] The countdown decrements in real time and, when it reaches zero, a new post appears in the feed within one poll interval **without a manual refresh**
-- [ ] Rejected panel shows ≥10 real rejections with reasons
-- [ ] A post with `relatedPostIds` renders a working "continues from" link that scrolls to the referenced post
-- [ ] Expanding a rationale drawer shows `whySelected`, `whyNow`, and `whyOverOthers` populated from the API (no hardcoded text anywhere in `app.js`)
-- [ ] Timeline shows at least one grey (no-publish) tick
-- [ ] API tab's "Run" button returns and pretty-prints the live contract response
-- [ ] Layout does not break at 768px width
-- [ ] Dashboard degrades gracefully with a friendly message if an endpoint 500s or the agent is uninitialized — no blank white screen
-- [ ] No build step: a fresh clone + `npm start` serves the working dashboard
+- [x] Rejected panel shows ≥10 real rejections with reasons
+- [x] A post with `relatedPostIds` renders a working "continues from" link that scrolls to the referenced post
+- [x] Expanding a rationale drawer shows `whySelected`, `whyNow`, and `whyOverOthers` populated from the API (no hardcoded text anywhere in `app.js`)
+- [x] Timeline shows at least one grey (no-publish) tick
+- [x] API tab's "Run" button returns and pretty-prints the live contract response
+- [x] Layout does not break at 768px width
+- [x] Dashboard degrades gracefully with a friendly message if an endpoint 500s or the agent is uninitialized — no blank white screen
+- [x] No build step: a fresh clone + `npm start` serves the working dashboard
 - [ ] Deployed dashboard verified in a logged-out browser
 
 ### Commits

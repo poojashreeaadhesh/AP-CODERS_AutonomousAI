@@ -39,6 +39,20 @@ function continuityLine(state, memoryHints) {
   return "New thread in this feed:";
 }
 
+function contextRationaleNotes(context = {}) {
+  const notes = [];
+
+  if (context.reserveFallback) {
+    notes.push("Live sources were unreachable, so this came from the reserve candidate pool.");
+  }
+
+  if (context.sourceDiversityNote) {
+    notes.push(context.sourceDiversityNote);
+  }
+
+  return notes;
+}
+
 export function writePost(selected, state, createdAt = new Date(), rejected = [], context = {}) {
   const { topic, reasons } = selected;
   const persona = state.agent.persona;
@@ -74,6 +88,8 @@ export function writePost(selected, state, createdAt = new Date(), rejected = []
     rationaleParts.push(`Rejected candidates included ${rejectedExamples}.`);
   }
 
+  rationaleParts.push(...contextRationaleNotes(context));
+
   const rationale = rationaleParts.join(" ");
 
   const post = {
@@ -82,6 +98,8 @@ export function writePost(selected, state, createdAt = new Date(), rejected = []
     text,
     rationale,
     sources: [topic.url],
+    sourceName: topic.sourceName || null,
+    sourceId: topic.sourceId || null,
     decidedBy: selected.decidedBy || "heuristic-fallback",
     model: selected.model || "heuristic-template",
     tokensUsed: selected.tokensUsed || 0,
@@ -142,8 +160,10 @@ export async function writePostWithLLM(selected, state, createdAt = new Date(), 
       id: createId("p"),
       createdAt: createdAt.toISOString(),
       text: value.text.trim(),
-      rationale: value.rationale.trim(),
+      rationale: [value.rationale.trim(), ...contextRationaleNotes(context)].join(" "),
       sources: [selectedWithMemory.topic.url],
+      sourceName: selectedWithMemory.topic.sourceName || null,
+      sourceId: selectedWithMemory.topic.sourceId || null,
       decidedBy: selectedWithMemory.decidedBy === "llm" ? "llm" : "heuristic-fallback",
       writerBy: "llm",
       model,

@@ -16,7 +16,8 @@ const PRUNE_LIMITS = {
   seenTopics: 300,
   rejectedTopics: 150,
   cycles: 100,
-  activityLog: 500
+  activityLog: 500,
+  candidateReserve: 20
 };
 
 // Scheduling never goes silent for long: a quiet cycle decays the editorial
@@ -198,6 +199,7 @@ export function createInitialState(personaInput) {
     seenTopics: [],
     memory: { themes: {}, entities: {} },
     sourceHealth: {},
+    candidateReserve: [],
     activityLog: [],
     cycles: [],
     nextPublishAt: createdAt,
@@ -239,12 +241,119 @@ function recordSeenTopics(agentState, topics, now) {
   agentState.seenTopics = agentState.seenTopics.slice(-PRUNE_LIMITS.seenTopics);
 }
 
-export async function runPublishingCycle(agentState, topics, now = new Date()) {
+function topicReserveKey(topic) {
+  return topic?.url || String(topic?.title || "").toLowerCase();
+}
+
+function publishedUrlSet(agentState) {
+  return new Set(agentState.posts.flatMap((post) => post.sources || []));
+}
+
+function reserveEntryFromScored(scored, now) {
+  return {
+    ...scored.topic,
+    reserveScore: Number(scored.score.toFixed(2)),
+    reserveReasons: scored.reasons || [],
+    reservedAt: now.toISOString()
+  };
+}
+
+function updateCandidateReserve(agentState, evaluation, now, selectedTopic = null) {
+  const publishedUrls = publishedUrlSet(agentState);
+  const selectedKey = topicReserveKey(selectedTopic);
+  const existing = new Map(
+    (agentState.candidateReserve || [])
+      .filter((topic) => topicReserveKey(topic) && !publishedUrls.has(topic.url))
+      .map((topic) => [topicReserveKey(topic), topic])
+  );
+
+  for (const scored of [...(evaluation.scored || [])].sort((a, b) => b.score - a.score)) {
+    const key = topicReserveKey(scored.topic);
+    if (!key || key === selectedKey || publishedUrls.has(scored.topic.url)) continue;
+    if (scored.score < THRESHOLD_FLOOR) continue;
+    existing.set(key, reserveEntryFromScored(scored, now));
+  }
+
+  agentState.candidateReserve = [...existing.values()]
+    .sort((a, b) => (b.reserveScore || 0) - (a.reserveScore || 0))
+    .slice(0, PRUNE_LIMITS.candidateReserve);
+}
+
+function removeFromReserve(agentState, topic) {
+  const key = topicReserveKey(topic);
+  if (!key) return;
+  agentState.candidateReserve = (agentState.candidateReserve || []).filter((item) => topicReserveKey(item) !== key);
+}
+
+function reserveTopics(agentState, now) {
+  const publishedUrls = publishedUrlSet(agentState);
+  return (agentState.candidateReserve || [])
+    .filter((topic) => topic.title && topic.url && !publishedUrls.has(topic.url))
+    .slice(0, PRUNE_LIMITS.candidateReserve)
+    .map((topic) => ({
+      ...topic,
+      fromReserve: true,
+      publishedAt: topic.publishedAt || topic.reservedAt || now.toISOString()
+    }));
+}
+
+function applySourceDiversityGovernor(agentState, evaluation, threshold) {
+  if (!evaluation.selected) return { note: null };
+
+  const lastTwoSources = agentState.posts.slice(0, 2).map((post) => post.sourceName).filter(Boolean);
+  if (lastTwoSources.length < 2 || lastTwoSources[0] !== lastTwoSources[1]) {
+    return { note: null };
+  }
+
+  const repeatedSource = lastTwoSources[0];
+  if (evaluation.selected.topic.sourceName !== repeatedSource) {
+    return { note: null };
+  }
+
+  const alternative = [...(evaluation.scored || [])]
+    .filter((item) => item.score >= threshold)
+    .filter((item) => item.topic.sourceName && item.topic.sourceName !== repeatedSource)
+    .sort((a, b) => b.score - a.score)[0];
+
+  if (!alternative) {
+    return {
+      note: `Kept ${repeatedSource} because no alternative source cleared the editorial threshold this cycle.`
+    };
+  }
+
+  evaluation.selected = {
+    ...alternative,
+    editorialScore: Number(alternative.score.toFixed(2)),
+    whySelected: alternative.reasons[0] || "it cleared the editorial bar from a different source",
+    whyNow: "it was surfaced by a live source during this publishing cycle",
+    whyOverOthers: [
+      {
+        title: evaluation.selected.topic.title,
+        url: evaluation.selected.topic.url,
+        score: Number(Number(evaluation.selected.editorialScore ?? evaluation.selected.score ?? 0).toFixed(2)),
+        reason: `the last two posts already came from ${repeatedSource}`
+      }
+    ],
+    decidedBy: "heuristic-fallback",
+    model: "heuristic",
+    tokensUsed: evaluation.selected.tokensUsed || 0
+  };
+
+  return {
+    note: `Deliberately went outside ${repeatedSource} because the last two posts already came from that source.`,
+    switched: true,
+    fromSource: repeatedSource,
+    toSource: alternative.topic.sourceName
+  };
+}
+
+export async function runPublishingCycle(agentState, topics, now = new Date(), context = {}) {
   const hadNoPostsBefore = agentState.posts.length === 0;
   const previousNextPublishAt = agentState.nextPublishAt;
   const threshold = agentState.editorialThreshold ?? DEFAULT_EDITORIAL_THRESHOLD;
 
   const evaluation = await evaluateTopicsWithLLM(topics, agentState, now, threshold);
+  const diversity = applySourceDiversityGovernor(agentState, evaluation, threshold);
 
   recordSeenTopics(agentState, topics, now);
   agentState.rejectedTopics.push(...evaluation.rejected);
@@ -292,6 +401,10 @@ export async function runPublishingCycle(agentState, topics, now = new Date()) {
     tokensUsed: evaluation.tokensUsed || 0,
     sourcesQueried: [...new Set(topics.map((topic) => topic.sourceName).filter(Boolean))],
     sourcesFailed: [],
+    usedReserve: Boolean(context.reserveFallback),
+    sourceOutage: Boolean(context.sourceOutage),
+    sourceDiversityNote: diversity.note,
+    candidateReserveSize: agentState.candidateReserve?.length || 0,
     publishedPostId: null,
     status: "no_publishable_topic"
   };
@@ -301,15 +414,21 @@ export async function runPublishingCycle(agentState, topics, now = new Date()) {
     const post = await writePostWithLLM(evaluation.selected, agentState, now, evaluation.rejected, {
       cycleId: cycle.id,
       candidatesEvaluated: topics.length,
-      sourcesQueried: [...new Set(topics.map((topic) => topic.sourceName).filter(Boolean))]
+      sourcesQueried: [...new Set(topics.map((topic) => topic.sourceName).filter(Boolean))],
+      reserveFallback: Boolean(context.reserveFallback),
+      sourceOutage: Boolean(context.sourceOutage),
+      sourceDiversityNote: diversity.note
     });
     updateMemoryWithPost(agentState, post);
     agentState.posts.unshift(post);
+    removeFromReserve(agentState, evaluation.selected.topic);
+    updateCandidateReserve(agentState, evaluation, now, evaluation.selected.topic);
     cycle.publishedPostId = post.id;
     cycle.decidedBy = post.decidedBy;
     cycle.model = post.model;
     cycle.tokensUsed = post.tokensUsed || cycle.tokensUsed;
     cycle.status = "published";
+    cycle.candidateReserveSize = agentState.candidateReserve?.length || 0;
     appendActivity(agentState, "post.published", `published ${post.id} — ${post.sourceTitle || post.text.split("\n")[0]}`, {
       at: now,
       data: {
@@ -322,6 +441,8 @@ export async function runPublishingCycle(agentState, topics, now = new Date()) {
       }
     });
   } else {
+    updateCandidateReserve(agentState, evaluation, now);
+    cycle.candidateReserveSize = agentState.candidateReserve?.length || 0;
     appendActivity(agentState, "cycle.no_publish", "cycle ended with no publishable topic", {
       at: now,
       data: {
@@ -365,17 +486,25 @@ export async function runPublishingCycle(agentState, topics, now = new Date()) {
 
 async function runSingleDueCycle(agentState, now = new Date()) {
   appendActivity(agentState, "discovery.start", "starting live topic discovery", { at: now });
-  const { topics, sourceResults } = await discoverTopicsWithTelemetry(agentState.agent.persona);
+  const discovery = await discoverTopicsWithTelemetry(agentState.agent.persona, {
+    cycleCount: agentState.cycles.length,
+    sourceHealth: agentState.sourceHealth || {},
+    now
+  });
+  let { topics } = discovery;
+  const { sourceResults } = discovery;
   const sourceHealth = agentState.sourceHealth || {};
 
   for (const result of sourceResults) {
-    const existing = sourceHealth[result.sourceName] || { consecutiveFailures: 0 };
-    sourceHealth[result.sourceName] = {
+    sourceHealth[result.id] = {
+      sourceName: result.sourceName,
+      kind: result.kind,
       status: result.status,
       query: result.query,
       lastCount: result.count,
-      lastCheckedAt: now.toISOString(),
-      consecutiveFailures: result.status === "failed" ? (existing.consecutiveFailures || 0) + 1 : 0,
+      lastCheckedAt: result.lastCheckedAt || now.toISOString(),
+      consecutiveFailures: result.consecutiveFailures || 0,
+      disabledUntil: result.disabledUntil || null,
       lastError: result.error || null
     };
 
@@ -385,15 +514,46 @@ async function runSingleDueCycle(agentState, now = new Date()) {
         at: now,
         data: { sourceName: result.sourceName, query: result.query, error: result.error }
       });
+    } else if (result.status === "disabled") {
+      appendActivity(agentState, "source.disabled", `${result.sourceName} disabled after repeated failures`, {
+        level: "warn",
+        at: now,
+        data: {
+          sourceName: result.sourceName,
+          query: result.query,
+          disabledUntil: result.disabledUntil,
+          error: result.error
+        }
+      });
     }
   }
 
   agentState.sourceHealth = sourceHealth;
-  const cycle = await runPublishingCycle(agentState, topics, now);
+  const sourceOutage = sourceResults.length > 0 && sourceResults.every((result) => result.status !== "ok");
+  const reserveFallback = topics.length === 0 && reserveTopics(agentState, now).length > 0;
+
+  if (reserveFallback) {
+    topics = reserveTopics(agentState, now);
+    appendActivity(agentState, "candidate.reserve_used", "live discovery returned no candidates, using reserve pool", {
+      level: sourceOutage ? "warn" : "info",
+      at: now,
+      data: {
+        sourceOutage,
+        reserveCandidates: topics.length
+      }
+    });
+  }
+
+  const cycle = await runPublishingCycle(agentState, topics, now, {
+    reserveFallback,
+    sourceOutage,
+    discoveryQuery: discovery.query
+  });
+  cycle.discoveryQuery = discovery.query;
   cycle.sourcesQueried = sourceResults.map((result) => result.sourceName);
   cycle.sourcesFailed = sourceResults
-    .filter((result) => result.status === "failed")
-    .map((result) => ({ sourceName: result.sourceName, error: result.error }));
+    .filter((result) => result.status !== "ok")
+    .map((result) => ({ sourceName: result.sourceName, status: result.status, error: result.error }));
   return cycle;
 }
 
@@ -521,6 +681,7 @@ function emptyTransparencyPayload(kind) {
       nextPublishAt: null,
       nextPublishReason: emptyActivityMessage(),
       currentThreshold: DEFAULT_EDITORIAL_THRESHOLD,
+      candidateReserveCount: 0,
       sourceHealth: {},
       llmEnabled: process.env.LLM_ENABLED !== "false" && Boolean(process.env.ANTHROPIC_API_KEY)
     };
@@ -568,6 +729,7 @@ export async function loadAgentStatus(requestedAgentId) {
     nextPublishAt: agentState.nextPublishAt || null,
     nextPublishReason: agentState.nextPublishReason || null,
     currentThreshold: agentState.editorialThreshold ?? DEFAULT_EDITORIAL_THRESHOLD,
+    candidateReserveCount: agentState.candidateReserve?.length || 0,
     sourceHealth: agentState.sourceHealth || {},
     llmEnabled: process.env.LLM_ENABLED !== "false" && Boolean(process.env.ANTHROPIC_API_KEY)
   };
@@ -607,6 +769,11 @@ export async function loadCycles(requestedAgentId, searchParams = new URLSearchP
       tokensUsed: cycle.tokensUsed,
       publishedPostId: cycle.publishedPostId,
       nextPublishReason: cycle.nextPublishReason,
+      discoveryQuery: cycle.discoveryQuery || null,
+      usedReserve: Boolean(cycle.usedReserve),
+      sourceOutage: Boolean(cycle.sourceOutage),
+      sourceDiversityNote: cycle.sourceDiversityNote || null,
+      candidateReserveSize: cycle.candidateReserveSize || 0,
       sourcesQueried: cycle.sourcesQueried || [],
       sourcesFailed: cycle.sourcesFailed || []
     }))

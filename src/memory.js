@@ -202,9 +202,17 @@ export function buildRationaleDetail({ selected, rejected, context, relatedPostI
     }
   }
 
+  const whyNowParts = [selected.whyNow || "it was surfaced by a live source during this publishing cycle"];
+  if (context.reserveFallback) {
+    whyNowParts.push("Live sources were unreachable, so this came from the reserve candidate pool.");
+  }
+  if (context.sourceDiversityNote) {
+    whyNowParts.push(context.sourceDiversityNote);
+  }
+
   return {
     whySelected: selected.whySelected || selected.reasons?.[0] || "it cleared the editorial bar",
-    whyNow: selected.whyNow || "it was surfaced by a live source during this publishing cycle",
+    whyNow: whyNowParts.join(" "),
     whyOverOthers,
     candidatesEvaluated: context.candidatesEvaluated || 0,
     sourcesQueried: context.sourcesQueried || [],

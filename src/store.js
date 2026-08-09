@@ -28,6 +28,7 @@ function normalizeAgentState(agentState) {
     seenTopics: agentState.seenTopics || [],
     memory: agentState.memory || { themes: {}, entities: {} },
     sourceHealth: agentState.sourceHealth || {},
+    candidateReserve: agentState.candidateReserve || [],
     activityLog: agentState.activityLog || [],
     cycles: agentState.cycles || []
   };
@@ -56,6 +57,7 @@ function migrate(raw) {
           rejectedTopics: raw.rejectedTopics || [],
           seenTopics: raw.seenTopics || [],
           memory: raw.memory || { themes: {}, entities: {} },
+          candidateReserve: raw.candidateReserve || [],
           cycles: raw.cycles || [],
           nextPublishAt: raw.nextPublishAt || raw.agent.createdAt
         })

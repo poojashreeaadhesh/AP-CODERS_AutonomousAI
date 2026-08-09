@@ -439,19 +439,21 @@ Integration test: init → forced cycle → feed contains a valid post with rati
 
 ### Acceptance criteria — the 14 pre-submission checks (run against the **deployed** URL)
 - [ ] 1. `POST /init` on a clean deploy returns an `agentId`; `/status` persona matches what was sent
-- [ ] 2. `GET /feed?agentId=<real>` → 200 in <1s, valid JSON, newest-first
-- [ ] 3. `GET /feed?agentId=garbage` → **200 with posts** (not 404, not 500)
-- [ ] 4. `GET /feed` with no `agentId` → clean 400, no stack trace
-- [ ] 5. Every `createdAt` parses as ISO-8601 UTC and ends in `Z`
-- [ ] 6. Every `id` is unique across the whole feed
-- [ ] 7. Every post has ≥1 non-empty, resolvable `sources` URL (HTTP HEAD each; ≥90% resolve)
-- [ ] 8. **Restart the host → `/feed` returns the same posts with the same `agentId`**
+- [x] 2. `GET /feed?agentId=<real>` → 200 in <1s, valid JSON, newest-first
+- [x] 3. `GET /feed?agentId=garbage` → **200 with posts** (not 404, not 500)
+- [x] 4. `GET /feed` with no `agentId` → clean 400, no stack trace
+- [x] 5. Every `createdAt` parses as ISO-8601 UTC and ends in `Z`
+- [x] 6. Every `id` is unique across the whole feed
+- [x] 7. Every post has ≥1 non-empty, resolvable `sources` URL (HTTP HEAD each; ≥90% resolve)
+- [x] 8. **Restart the host → `/feed` returns the same posts with the same `agentId`**
 - [ ] 9. Wait one full interval → a new post appears with no request from you
 - [ ] 10. Posts persist and accumulate across 3 checks spaced ≥2h apart
-- [ ] 11. Repo is public in a logged-out browser; `README.md` and `AI_USAGE_LOG.md` render
-- [ ] 12. `npm ci && npm test` passes on a fresh clone
-- [ ] 13. No secrets in git: inspect history for committed Anthropic-looking key values
-- [ ] 14. Dashboard loads with no console errors
+- [x] 11. Repo is public in a logged-out browser; `README.md` and `AI_USAGE_LOG.md` render
+- [x] 12. `npm ci && npm test` passes on a fresh clone
+- [x] 13. No secrets in git: inspect history for committed Anthropic-looking key values
+- [x] 14. Dashboard loads with no console errors
+
+Deployment evidence: Railway deployment `8be1ba03-70dc-4d55-9a8d-cfa92cbb8ad5` succeeded, `/health` returned 12 persisted posts for `agent-e72db96a`, `/feed` responded in 262ms, 10/10 sampled source URLs resolved, GitHub README and AI log pages returned 200, strict Anthropic-key-shaped history scan returned no matches, fresh clone `npm ci && npm test` passed 48/48, and browser verification found 12 feed cards, 12 cycle ticks, no horizontal overflow, and zero console errors.
 
 ### Acceptance criteria — docs & authenticity
 - [x] README contains every section listed above

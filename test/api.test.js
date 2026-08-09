@@ -133,8 +133,11 @@ test("dashboard assets are served without a build step", async () => {
     assert.equal(jsResponse.status, 200);
     assert.match(jsResponse.headers.get("content-type"), /javascript/);
     assert.match(js, /refreshAll/);
+    assert.match(js, /Promise\.allSettled/);
     assert.equal(cssResponse.status, 200);
     assert.match(cssResponse.headers.get("content-type"), /text\/css/);
+    assert.match(css, /\.ring::before/);
+    assert.match(css, /inset: 10px/);
     assert.match(css, /@media \(max-width: 768px\)/);
   });
 });

@@ -234,37 +234,42 @@ async function runApiCheck() {
 }
 
 async function refreshAll({ quiet = false } = {}) {
-  try {
-    const [health, status, feed, rejected, cycles, memory, log] = await Promise.all([
-      fetchJson("/health"),
-      fetchJson(endpoint("/api/agent/status")),
-      fetchJson(endpoint("/api/agent/feed")),
-      fetchJson(endpoint("/api/agent/rejected?limit=30")),
-      fetchJson(endpoint("/api/agent/cycles?limit=30")),
-      fetchJson(endpoint("/api/agent/memory")),
-      fetchJson(endpoint("/api/agent/log?limit=40"))
-    ]);
+  const results = await Promise.allSettled([
+    fetchJson("/health"),
+    fetchJson(endpoint("/api/agent/status")),
+    fetchJson(endpoint("/api/agent/feed")),
+    fetchJson(endpoint("/api/agent/rejected?limit=30")),
+    fetchJson(endpoint("/api/agent/cycles?limit=30")),
+    fetchJson(endpoint("/api/agent/memory")),
+    fetchJson(endpoint("/api/agent/log?limit=40"))
+  ]);
 
-    state.status = status;
-    state.feed = feed;
-    state.rejected = rejected;
-    state.cycles = cycles;
-    state.memory = memory;
-    state.log = log;
+  const [healthResult, statusResult, feedResult, rejectedResult, cyclesResult, memoryResult, logResult] = results;
+  const failures = results.filter((result) => result.status === "rejected");
 
-    renderHealth(Boolean(health.ok));
-    renderStatus();
-    renderFeed();
-    renderRejected();
-    renderTimeline();
-    renderMemory();
-    renderLog();
-    renderApiExample();
-    if (!quiet) showToast("Dashboard refreshed");
-  } catch (error) {
-    renderHealth(false);
-    showToast(`Dashboard degraded: ${error.message}`);
-    $("#feed-list").innerHTML = `<article class="panel empty">The dashboard could not load live agent data. The API may still be starting up.</article>`;
+  if (healthResult.status === "fulfilled") renderHealth(Boolean(healthResult.value.ok));
+  else renderHealth(false);
+
+  if (statusResult.status === "fulfilled") state.status = statusResult.value;
+  if (feedResult.status === "fulfilled") state.feed = feedResult.value;
+  if (rejectedResult.status === "fulfilled") state.rejected = rejectedResult.value;
+  if (cyclesResult.status === "fulfilled") state.cycles = cyclesResult.value;
+  if (memoryResult.status === "fulfilled") state.memory = memoryResult.value;
+  if (logResult.status === "fulfilled") state.log = logResult.value;
+
+  renderStatus();
+  renderFeed();
+  renderRejected();
+  renderTimeline();
+  renderMemory();
+  renderLog();
+  renderApiExample();
+
+  if (failures.length) {
+    const failedPanels = failures.length === 1 ? "one panel" : `${failures.length} panels`;
+    showToast(`Dashboard degraded: ${failedPanels} could not refresh`);
+  } else if (!quiet) {
+    showToast("Dashboard refreshed");
   }
 }
 

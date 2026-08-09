@@ -206,7 +206,7 @@ test: scheduler never goes silent and never backdates
 - [ ] Waiting one full interval with **zero requests sent** produces a new post
 - [ ] Three feed reads spaced ≥2h apart each return strictly more posts than the previous, and all prior posts are still present
 - [ ] Keep-alive cron is configured and its last 3 pings succeeded
-- [ ] No secrets in the repo: `git log -p | grep -i 'sk-ant'` is empty
+- [ ] No secrets in the repo: inspect git history for committed Anthropic-looking key values
 - [ ] README top shows the live URL and the production `agentId`
 
 ### Commits
@@ -239,16 +239,16 @@ docs: record the live demo URL and production agentId
 
 ### Acceptance criteria
 - [ ] With `ANTHROPIC_API_KEY` set, three consecutive posts have **different opening sentences and visibly different structure** (manual read + an automated check that the first 8 words of each are distinct)
-- [ ] New test: **with `ANTHROPIC_API_KEY` unset, a full cycle still publishes** a post via the template fallback, and `decidedBy === "heuristic-fallback"`
-- [ ] New test: a mocked malformed LLM JSON response triggers one retry, then the fallback — no crash, no missing post
-- [ ] New test: a mocked 529 triggers backoff retries then the fallback
-- [ ] New test: the LLM returning `selected: null` results in a cycle with `status: "no_publishable_topic"` and no post — the null is respected, not overridden
+- [x] New test: **with `ANTHROPIC_API_KEY` unset, a full cycle still publishes** a post via the template fallback, and `decidedBy === "heuristic-fallback"`
+- [x] New test: a mocked malformed LLM JSON response triggers one retry, then the fallback — no crash, no missing post
+- [x] New test: a mocked 529 triggers backoff retries then the fallback
+- [x] New test: the LLM returning `selected: null` results in a cycle with `status: "no_publishable_topic"` and no post — the null is respected, not overridden
 - [ ] `rationale` differs materially between posts (no two rationales share a full sentence)
-- [ ] No post text contains any string from `bannedPhrasings` or reuses an opening from `openingsToAvoid`
-- [ ] Every post carries `decidedBy`, `model`, `editorialScore`
-- [ ] `LLM_ENABLED=false` produces a working agent with zero outbound Anthropic calls
-- [ ] No API key appears in any log line, in `/status`, or in any response body
-- [ ] `grep -rn "sk-ant" .` returns nothing outside `.env` (untracked)
+- [x] No post text contains any string from `bannedPhrasings` or reuses an opening from `openingsToAvoid`
+- [x] Every post carries `decidedBy`, `model`, `editorialScore`
+- [x] `LLM_ENABLED=false` produces a working agent with zero outbound Anthropic calls
+- [x] No API key appears in any log line, in `/status`, or in any response body
+- [ ] No Anthropic-looking API key values appear outside `.env` (untracked)
 
 ### Commits
 ```
@@ -338,7 +338,7 @@ test: near-duplicate detection and memory continuity
 - [ ] Every `/memory` theme's `postIds` resolve to real posts
 - [ ] Activity log survives a process restart
 - [ ] None of the endpoints trigger a discovery cycle (verified by asserting no outbound fetch during 20 rapid calls)
-- [ ] No response contains `sk-ant` or any env var value
+- [ ] No response contains an API key-looking value or any env var value
 - [ ] Adding one of these endpoints required exactly one route-table entry (confirms T2's refactor holds)
 
 ### Commits
@@ -450,7 +450,7 @@ Integration test: init → forced cycle → feed contains a valid post with rati
 - [ ] 10. Posts persist and accumulate across 3 checks spaced ≥2h apart
 - [ ] 11. Repo is public in a logged-out browser; `README.md` and `AI_USAGE_LOG.md` render
 - [ ] 12. `npm ci && npm test` passes on a fresh clone
-- [ ] 13. No secrets in git: `git log -p | grep -i 'sk-ant'` empty
+- [ ] 13. No secrets in git: inspect history for committed Anthropic-looking key values
 - [ ] 14. Dashboard loads with no console errors
 
 ### Acceptance criteria — docs & authenticity

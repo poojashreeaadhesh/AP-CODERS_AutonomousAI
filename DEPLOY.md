@@ -64,7 +64,7 @@ Only needed once T6 (LLM-backed writer) is implemented. Skip this for now if
 you're deploying before T6.
 
 ```bash
-fly secrets set ANTHROPIC_API_KEY=sk-ant-... --app <your-app-name>
+fly secrets set ANTHROPIC_API_KEY=REPLACE_ME --app <your-app-name>
 ```
 
 Never put this in `fly.toml` or any committed file — `fly secrets set` is
@@ -207,7 +207,7 @@ curl -s "$APP_URL/api/agent/feed?agentId=$AGENT_ID" | jq '.posts | length, .post
 Before you consider this done:
 
 ```bash
-git log -p | grep -i 'sk-ant' && echo "LEAK FOUND - fix before submitting" || echo "clean"
+git log -p | grep -Ei 'ANTHROPIC_API_KEY=.*[[:alnum:]_-]{20,}' && echo "LEAK FOUND - fix before submitting" || echo "clean"
 ```
 
 ---

@@ -1,8 +1,8 @@
-import { DEFAULT_EDITORIAL_THRESHOLD, evaluateTopics } from "./editorial.js";
+import { DEFAULT_EDITORIAL_THRESHOLD, evaluateTopicsWithLLM } from "./editorial.js";
 import { discoverTopics } from "./discovery.js";
 import { loadStore, withStore } from "./store.js";
 import { createId, nowIso } from "./utils.js";
-import { writePost } from "./writer.js";
+import { writePostWithLLM } from "./writer.js";
 
 const DEFAULT_INTERVAL_MINUTES = 120;
 const MAX_POSTS_PER_CYCLE = 1;
@@ -210,13 +210,12 @@ function recordSeenTopics(agentState, topics, now) {
   agentState.seenTopics = agentState.seenTopics.slice(-PRUNE_LIMITS.seenTopics);
 }
 
-async function runSingleDueCycle(agentState, now = new Date()) {
+export async function runPublishingCycle(agentState, topics, now = new Date()) {
   const hadNoPostsBefore = agentState.posts.length === 0;
   const previousNextPublishAt = agentState.nextPublishAt;
   const threshold = agentState.editorialThreshold ?? DEFAULT_EDITORIAL_THRESHOLD;
 
-  const topics = await discoverTopics(agentState.agent.persona);
-  const evaluation = evaluateTopics(topics, agentState, now, threshold);
+  const evaluation = await evaluateTopicsWithLLM(topics, agentState, now, threshold);
 
   recordSeenTopics(agentState, topics, now);
   agentState.rejectedTopics.push(...evaluation.rejected);
@@ -229,14 +228,20 @@ async function runSingleDueCycle(agentState, now = new Date()) {
     rejectedCount: evaluation.rejected.length,
     acceptedCount: evaluation.acceptedCount,
     editorialThreshold: threshold,
+    decidedBy: evaluation.decidedBy || "heuristic-fallback",
+    model: evaluation.model || "heuristic",
+    tokensUsed: evaluation.tokensUsed || 0,
     publishedPostId: null,
     status: "no_publishable_topic"
   };
 
   if (evaluation.selected) {
-    const post = writePost(evaluation.selected, agentState, now, evaluation.rejected);
+    const post = await writePostWithLLM(evaluation.selected, agentState, now, evaluation.rejected);
     agentState.posts.unshift(post);
     cycle.publishedPostId = post.id;
+    cycle.decidedBy = post.decidedBy;
+    cycle.model = post.model;
+    cycle.tokensUsed = post.tokensUsed || cycle.tokensUsed;
     cycle.status = "published";
   }
 
@@ -260,6 +265,11 @@ async function runSingleDueCycle(agentState, now = new Date()) {
   agentState.cycles = agentState.cycles.slice(0, PRUNE_LIMITS.cycles);
 
   return cycle;
+}
+
+async function runSingleDueCycle(agentState, now = new Date()) {
+  const topics = await discoverTopics(agentState.agent.persona);
+  return runPublishingCycle(agentState, topics, now);
 }
 
 export async function runDueCyclesForAgent(agentState, now = new Date()) {

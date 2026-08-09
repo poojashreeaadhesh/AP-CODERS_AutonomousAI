@@ -16,5 +16,8 @@
     "ai",
     "hackathon"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0"
+  }
 }

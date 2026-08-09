@@ -1,4 +1,7 @@
 import { hoursBetween, normalizeText, similarity } from "./utils.js";
+import { callClaudeJson, getLlmModel, isLlmEnabled } from "./llm.js";
+import { getPersonaCharter } from "./persona.js";
+import { editorialDecisionPrompt } from "./prompts.js";
 
 const TECH_KEYWORDS = [
   "ai",
@@ -186,6 +189,156 @@ export function evaluateTopics(topics, state, now = new Date(), threshold = DEFA
     rejected,
     scored,
     acceptedCount: accepted.length,
-    threshold
+    threshold,
+    decidedBy: "heuristic-fallback",
+    model: "heuristic",
+    tokensUsed: 0
   };
+}
+
+function candidateId(index) {
+  return `c${index + 1}`;
+}
+
+function topCandidates(scored) {
+  return [...scored]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .map((item, index) => ({ ...item, id: candidateId(index) }));
+}
+
+function validateEditorialJson(value) {
+  if (!value || typeof value !== "object") throw new Error("response must be an object");
+  if (!(value.selected === null || typeof value.selected === "string")) {
+    throw new Error("selected must be a candidate id or null");
+  }
+  if (!Number.isFinite(Number(value.editorialScore))) {
+    throw new Error("editorialScore must be a number");
+  }
+  for (const key of ["whySelected", "whyNow"]) {
+    if (typeof value[key] !== "string" || value[key].trim().length < 8) {
+      throw new Error(`${key} must be a useful string`);
+    }
+  }
+  if (!Array.isArray(value.whyOverOthers)) throw new Error("whyOverOthers must be an array");
+  if (!Array.isArray(value.rejections)) throw new Error("rejections must be an array");
+}
+
+function llmRejections({ decision, candidates, now, fallbackRejected }) {
+  const byId = new Map(candidates.map((item) => [item.id, item]));
+  const seenUrls = new Set();
+  const rejected = [];
+
+  for (const item of decision.rejections || []) {
+    const candidate = byId.get(item.id);
+    if (!candidate || seenUrls.has(candidate.topic.url)) continue;
+    seenUrls.add(candidate.topic.url);
+    rejected.push({
+      title: candidate.topic.title,
+      url: candidate.topic.url,
+      score: Number(candidate.score.toFixed(2)),
+      rejectedAt: now.toISOString(),
+      reason: String(item.reason || "Claude rejected this candidate as lower priority").slice(0, 300)
+    });
+  }
+
+  for (const item of fallbackRejected) {
+    if (seenUrls.has(item.url)) continue;
+    rejected.push(item);
+  }
+
+  return rejected.slice(0, 10);
+}
+
+function annotateFallback(result) {
+  if (!result.selected) return result;
+  return {
+    ...result,
+    selected: {
+      ...result.selected,
+      editorialScore: Number(result.selected.score.toFixed(2)),
+      whySelected: result.selected.reasons[0] || "it cleared the heuristic editorial bar",
+      whyNow: "it was surfaced by a live source during this publishing cycle",
+      whyOverOthers: [],
+      decidedBy: "heuristic-fallback",
+      model: "heuristic",
+      tokensUsed: 0
+    }
+  };
+}
+
+export async function evaluateTopicsWithLLM(
+  topics,
+  state,
+  now = new Date(),
+  threshold = DEFAULT_EDITORIAL_THRESHOLD
+) {
+  const fallback = annotateFallback(evaluateTopics(topics, state, now, threshold));
+
+  if (!isLlmEnabled() || topics.length === 0) {
+    return fallback;
+  }
+
+  const candidates = topCandidates(fallback.scored);
+  const candidatesById = new Map(candidates.map((item) => [item.id, item]));
+  const charter = getPersonaCharter(state.agent?.persona);
+
+  try {
+    const { value: decision, model, tokensUsed } = await callClaudeJson({
+      prompt: editorialDecisionPrompt({ charter, candidates, state }),
+      validate: (value) => {
+        validateEditorialJson(value);
+        if (value.selected !== null && !candidatesById.has(value.selected)) {
+          throw new Error("selected must match one of the supplied candidate ids");
+        }
+      }
+    });
+
+    const rejected = llmRejections({
+      decision,
+      candidates,
+      now,
+      fallbackRejected: fallback.rejected
+    });
+
+    if (decision.selected === null) {
+      return {
+        ...fallback,
+        selected: null,
+        rejected,
+        acceptedCount: 0,
+        decidedBy: "llm",
+        model,
+        tokensUsed,
+        llmDecision: decision
+      };
+    }
+
+    const selected = candidatesById.get(decision.selected);
+    return {
+      ...fallback,
+      selected: {
+        ...selected,
+        editorialScore: Number(Number(decision.editorialScore).toFixed(2)),
+        whySelected: decision.whySelected.trim(),
+        whyNow: decision.whyNow.trim(),
+        whyOverOthers: decision.whyOverOthers || [],
+        decidedBy: "llm",
+        model,
+        tokensUsed
+      },
+      rejected,
+      decidedBy: "llm",
+      model,
+      tokensUsed,
+      llmDecision: decision
+    };
+  } catch (error) {
+    console.warn(`LLM editorial fallback: ${error.message}`);
+    return {
+      ...fallback,
+      model: getLlmModel(),
+      llmError: "editorial_fallback"
+    };
+  }
 }

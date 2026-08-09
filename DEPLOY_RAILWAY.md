@@ -142,7 +142,7 @@ Only after the LLM-backed writer/editor is implemented, optionally set the
 Anthropic key as a private Railway variable:
 
 ```bash
-railway variables --set "ANTHROPIC_API_KEY=sk-ant-..."
+railway variables --set "ANTHROPIC_API_KEY=REPLACE_ME"
 ```
 
 Never commit a real API key to GitHub, README files, deployment docs, or

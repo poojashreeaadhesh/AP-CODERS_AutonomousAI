@@ -5,8 +5,8 @@ editorial judgment over what to publish, writes in a consistent voice,
 remembers what it has already covered, and keeps publishing over time after
 a single initialization call — no further prompts required.
 
-> **Live demo:** _TODO — filled in once deployed (see [TICKETS.md](TICKETS.md) T5)_
-> **Production `agentId`:** _TODO_
+> **Live demo:** https://aps-autobot-production.up.railway.app
+> **Production `agentId`:** agent-e72db96a
 > **AI usage log:** [AI_USAGE_LOG.md](AI_USAGE_LOG.md)
 
 ## What to look at first

@@ -1,70 +1,133 @@
-# Deploy Runbook — Railway (no credit card required)
+## Deploy Runbook - Railway
 
-Fly.io dropped its free tier in 2024 and now requires a card after a 2-hour
-trial, so this is the recommended path instead. Railway's Trial plan:
+This document has two different audiences:
 
-- **No credit card to sign up.** You get a one-time $5 usage credit, good
-  for 30 days.
-- **Real persistent volumes** — up to 50GB during the trial (they shrink to
-  10GB after, and trial volumes are deleted 30 days after the trial credit
-  expires — irrelevant for a 48-hour observation window).
-- **No forced sleep.** Unlike Render's free tier (15-minute inactivity
-  spin-down with *no* persistent disk at all on free services), Railway's
-  "App Sleeping" feature is opt-in and disabled by default — your service
-  stays up continuously unless you turn sleeping on.
-- A tiny single-instance Node app running 48 hours costs a small fraction of
-  the $5 credit.
+- **Evaluators:** use the "Evaluator quick check" section only. You do not need
+  Railway access, the Railway CLI, or the project owner's account.
+- **Project owner:** use the "Owner deployment steps" section only when creating
+  or updating the hosted deployment.
 
-Do this early — see the note at the top of `DEPLOY.md` about why
-initializing at hour ~6 instead of hour ~23 matters. That reasoning applies
-here unchanged; only the hosting steps below differ.
+Railway is the hosting platform used for this backend. It is similar in purpose
+to Vercel, but this project needs a continuously running Node server plus a
+persistent volume at `/data`, which makes Railway a better fit for this agent.
 
 ---
+
+## Evaluator Quick Check
+
+Use the already-deployed backend:
+
+```bash
+export APP_URL= "https://aps-autobot-production.up.railway.app"
+export AGENT_ID= agent-e72db96a
+```
+
+Check that the service is alive:
+
+```bash
+curl -s "$APP_URL/health" | jq .
+```
+
+Expected shape:
+
+```json
+{
+  "ok": true,
+  "agents": 1,
+  "posts": 2,
+  "lastCycleAt": "2026-08-09T03:45:02.951Z",
+  "nextPublishAt": "2026-08-09T04:27:01.674Z"
+}
+```
+
+Check the feed:
+
+```bash
+curl -s "$APP_URL/api/agent/feed?agentId=$AGENT_ID" | jq .
+```
+
+Check only the post count:
+
+```bash
+curl -s "$APP_URL/api/agent/feed?agentId=$AGENT_ID" | jq '.posts | length'
+```
+
+The scheduler is live if:
+
+- `/health` returns `"ok": true`.
+- `posts` is greater than `0`.
+- `lastCycleAt` is recent.
+- `nextPublishAt` is a future timestamp.
+- Running the health check later shows `lastCycleAt`, `nextPublishAt`, or
+  `posts` changing.
+
+Do **not** run these owner-only commands while evaluating the existing hosted
+demo:
+
+```bash
+railway up
+railway redeploy
+railway volume add
+railway variables --set ...
+```
+
+Those commands require the project owner's Railway account and may restart or
+modify the production deployment.
+
+---
+
+## Owner Deployment Steps
+
+Use this section only if you are deploying or updating the Railway service.
 
 ## 0. Prerequisites
 
 ```bash
-# Install the CLI
 curl -fsSL https://railway.com/install.sh | sh
-
-# Log in (opens a browser, no card required)
 railway login
 ```
 
-## 1. Create the project
+Confirm login:
+
+```bash
+railway whoami
+```
+
+## 1. Create Or Link The Project
+
+If this is the first deployment:
 
 ```bash
 cd /path/to/repo
 railway init
 ```
 
-This prompts for a project name and creates it. It does **not** deploy yet.
-
-## 2. Deploy
-
-Railway auto-detects the `Dockerfile` already in this repo — no extra config
-needed.
+If the project already exists:
 
 ```bash
-railway up
+cd /path/to/repo
+railway link
 ```
 
-Watch the build logs for errors. Once it's live, generate a public domain:
+Confirm Railway knows the project, environment, service, URL, and volume:
 
 ```bash
-railway domain
+railway status
 ```
 
-This prints a URL like `https://<something>.up.railway.app`. Save it:
+Expected important fields:
 
-```bash
-export APP_URL="https://<something>.up.railway.app"
+```text
+Project: AP's AUTOBOT
+Environment: production
+Linked service: AP's AUTOBOT
+url: https://aps-autobot-production.up.railway.app
+volume: ap's-autobot-volume - /data
 ```
 
-## 3. Set environment variables
+## 2. Set Environment Variables
 
-Railway auto-injects `PORT` (the app already reads `process.env.PORT`, so
-this just works). Set the rest to match the scheduler defaults from T4:
+Railway injects `PORT` automatically. Set the scheduler and storage variables:
 
 ```bash
 railway variables --set "DATA_DIR=/data" \
@@ -75,170 +138,283 @@ railway variables --set "DATA_DIR=/data" \
   --set "MAX_CATCHUP_POSTS=3"
 ```
 
-Optional, only once T6 (LLM-backed writer) is implemented — never put this
-in a committed file:
+Only after the LLM-backed writer/editor is implemented, optionally set the
+Anthropic key as a private Railway variable:
 
 ```bash
 railway variables --set "ANTHROPIC_API_KEY=sk-ant-..."
 ```
 
-## 4. Attach a persistent volume — do not skip this
+Never commit a real API key to GitHub, README files, deployment docs, or
+`.env.example`.
 
-This is the fix for the single most likely way to lose the submission: an
-ephemeral filesystem wiping `data/state.json` on restart.
+## 3. Attach A Persistent Volume
+
+The volume keeps `/data/state.json` alive across restarts and redeploys.
 
 ```bash
 railway volume add
 ```
 
-This is interactive: pick the service, then enter the mount path `/data`
-when prompted. It redeploys the service automatically to attach the volume.
+If Railway says no service is linked, run:
 
-Confirm it's attached:
+```bash
+railway link
+railway volume add
+```
+
+When prompted for the mount path, use:
+
+```text
+/data
+```
+
+Confirm the volume:
 
 ```bash
 railway volume list
 ```
 
-## 5. Redeploy so the new variables and volume take effect
+You want to see:
+
+```text
+Attached to: AP's AUTOBOT
+Mount path: /data
+Status: Ready
+```
+
+## 4. Deploy Or Redeploy
+
+Use this only after code or Railway configuration changes:
 
 ```bash
 railway up
 ```
 
-Then check the logs:
+If the latest deployment already exists and you only need a restart:
 
 ```bash
-railway logs
+railway redeploy
 ```
 
-Look for `Autonomous AI Creator listening on http://localhost:3000` and
-confirm there is **no** `WARN state-not-durable` line. If you see that
-warning, the volume didn't mount at `/data` — go back to step 4 and confirm
-the mount path exactly matches `DATA_DIR`.
-
-## 6. Smoke-test against the deployed URL
+After redeploying, wait longer than 20 seconds before judging health:
 
 ```bash
+sleep 60
 curl -s "$APP_URL/health" | jq .
-curl -s "$APP_URL/api/agent/feed?agentId=nonexistent" | jq .   # 200, empty posts
 ```
 
-## 7. Initialize the agent — ONE TIME ONLY
+A temporary `502 Application failed to respond` immediately after redeploy can
+happen while the container is restarting. If `/health` becomes healthy after a
+minute or two, the deployment is fine.
+
+## 5. Set The Public URL Locally
+
+```bash
+export APP_URL="https://aps-autobot-production.up.railway.app"
+```
+
+If using a new Railway domain, replace that URL with the one from:
+
+```bash
+railway domain
+```
+
+## 6. Initialize The Agent - One Time Only
+
+Run this only once for the production URL:
 
 ```bash
 curl -s -X POST "$APP_URL/api/agent/init" \
   -H "content-type: application/json" \
-  -d '{"persona":{"name":"Ada","domain":"AI Security"}}' | tee /tmp/init-response.json | jq .
+  -d '{"persona":{"name":"Ada","domain":"AI Security"}}' \
+  | tee /tmp/init-response.json | jq .
+```
 
+Save the agent id:
+
+```bash
 export AGENT_ID=$(jq -r .agentId /tmp/init-response.json)
 echo "Production agentId: $AGENT_ID"
 ```
 
-Save `$AGENT_ID` immediately — this runbook's output, your notes, and the
-README (step 10). Do not run this `init` call again against this URL.
-
-## 8. Confirm the schedule is alive
+If `Production agentId:` is blank, debug with:
 
 ```bash
-curl -s "$APP_URL/health" | jq .
+cat /tmp/init-response.json
+curl -i -X POST "$APP_URL/api/agent/init" \
+  -H "content-type: application/json" \
+  -d '{"persona":{"name":"Ada","domain":"AI Security"}}'
+```
+
+Do not keep re-running `/api/agent/init` once a real production `agentId` has
+been created and recorded.
+
+## 7. Verify The Schedule
+
+```bash
+curl -s "$APP_URL/health" | jq '{ok, uptimeSeconds, agents, posts, lastCycleAt, nextPublishAt, nextPublishReason}'
 curl -s "$APP_URL/api/agent/feed?agentId=$AGENT_ID" | jq '.posts | length'
 ```
 
-Per T4, the first post should exist within about 90 seconds of init. If
-`posts` is still `0` after a few minutes, check `railway logs` for discovery
-errors — the agent retries every minute with a decayed threshold until
-something clears the bar.
+The first post should exist within about 90 seconds of initialization. Later
+checks should show the post count increasing and `lastCycleAt` moving forward.
 
-## 9. Restart test — the check that saves the submission
+## 8. Restart Persistence Test
+
+Before redeploy:
+
+```bash
+curl -s "$APP_URL/health" | jq '{posts, lastCycleAt, nextPublishAt}'
+```
+
+Redeploy:
 
 ```bash
 railway redeploy
-sleep 20
+```
+
+Wait and verify:
+
+```bash
+sleep 60
+curl -s "$APP_URL/health" | jq '{ok, posts, lastCycleAt, nextPublishAt}'
+curl -s "$APP_URL/api/agent/feed?agentId=$AGENT_ID" | jq '.posts | length'
+```
+
+Passing result: the post count is still present after redeploy. That proves the
+volume is mounted and state survived.
+
+---
+
+## Troubleshooting
+
+### `reqwest error` or `operation timed out`
+
+Example:
+
+```text
+error sending request for url (https://backboard.railway.com/graphql/v2)
+operation timed out
+```
+
+This is a Railway CLI/network problem, not necessarily an app problem. Check
+the deployed app directly:
+
+```bash
 curl -s "$APP_URL/health" | jq .
 curl -s "$APP_URL/api/agent/feed?agentId=$AGENT_ID" | jq '.posts | length'
 ```
 
-The post count must match what it was before the restart, and `agentId`
-must still resolve. If posts came back empty, the volume isn't actually
-mounted — fix this before trusting the deployment with 48 hours of
-evaluation.
+If the app responds, the backend is working. Use the Railway dashboard for logs
+or retry the CLI later.
 
-## 10. Record the URL and agentId
-
-Update the top of `README.md`:
-
-```markdown
-> **Live demo:** https://<something>.up.railway.app
-> **Production `agentId`:** agent-xxxxxxxx
-```
+Helpful CLI checks:
 
 ```bash
-git add README.md
-git commit -m "docs: record the live demo URL and production agentId"
-git push
-```
-
-## 11. External keep-alive (belt-and-braces)
-
-Railway shouldn't sleep this service by default, but add an external ping
-anyway as a second line of defense against any platform-side restart —
-free at [cron-job.org](https://cron-job.org):
-
-- URL: `$APP_URL/health`
-- Method: GET
-- Interval: every 5 minutes
-
-Confirm at least 3 pings have succeeded before moving on.
-
-## 12. Ongoing verification (spread across the next several hours)
-
-```bash
-curl -s "$APP_URL/api/agent/feed?agentId=$AGENT_ID" | jq '.posts | length, .posts[0].createdAt'
-```
-
-Check back at least 3 times, spaced 2+ hours apart. The post count should
-only ever go up, and every prior post should still be present.
-
-## 13. No secrets leaked
-
-```bash
-git log -p | grep -i 'sk-ant' && echo "LEAK FOUND - fix before submitting" || echo "clean"
-```
-
-## 14. Watch the trial credit
-
-```bash
+railway whoami
 railway status
+railway link
 ```
 
-Check the dashboard's usage page occasionally. A single small instance for
-48 hours should use well under the $5 trial credit, but confirm this isn't
-drifting if you're also running other Railway projects on the same account.
+If the CLI keeps timing out, switch network/VPN or use the Railway web
+dashboard.
+
+### `502 Application failed to respond`
+
+This can happen for a short time during redeploy. Wait 60-120 seconds and check:
+
+```bash
+curl -s "$APP_URL/health" | jq .
+```
+
+If `/health` returns `"ok": true`, the redeploy recovered.
+
+If it still returns 502 after several minutes, open Railway dashboard -> service
+-> logs and check the startup error.
+
+### `/tmp/init-response.json` Is Empty
+
+Usually `APP_URL` was blank or the init request failed.
+
+```bash
+echo "$APP_URL"
+curl -i -X POST "$APP_URL/api/agent/init" \
+  -H "content-type: application/json" \
+  -d '{"persona":{"name":"Ada","domain":"AI Security"}}'
+```
+
+### `agentId=nonexistent`
+
+This is only a robustness test. It is not your real agent id.
+
+The real id comes from:
+
+```bash
+curl -s -X POST "$APP_URL/api/agent/init" \
+  -H "content-type: application/json" \
+  -d '{"persona":{"name":"Ada","domain":"AI Security"}}' \
+  | tee /tmp/init-response.json | jq .
+```
+
+Then:
+
+```bash
+export AGENT_ID=$(jq -r .agentId /tmp/init-response.json)
+```
+
+### `railway volume add` Says No Service Found
+
+Run:
+
+```bash
+railway link
+railway status
+railway volume add
+```
+
+Choose the project and linked service, then mount at `/data`.
+
+### `WARN state-not-durable`
+
+The app is warning that `/data` is not writable or not mounted. Confirm:
+
+```bash
+railway volume list
+railway variables
+```
+
+`DATA_DIR` must be `/data`, and the volume mount path must also be `/data`.
 
 ---
 
-## Rollback / troubleshooting
+## README Snippet For Evaluators
 
-- **`WARN state-not-durable` in logs** → the volume isn't mounted at
-  `/data`. Run `railway volume list` to confirm it's attached to the right
-  service, and re-check the mount path from step 4.
-- **Feed returns 0 posts for a long time** → check `railway logs` for
-  repeated discovery failures. The scheduler retries every minute with a
-  decaying threshold, so this should self-heal within a few minutes unless
-  all three sources (Hacker News, Dev.to, arXiv) are unreachable from
-  Railway's network.
-- **Need to redeploy after a code change** → `git push` then `railway up`
-  again (or connect the GitHub repo in the dashboard for auto-deploys on
-  push). The volume and its data persist across deploys; no re-init needed.
-- **Made a mistake and need a fresh agent** → do not delete and recreate the
-  volume just to reset state; that also destroys legitimate history. Only
-  do this before any evaluator has recorded an `agentId`.
-- **Trial credit runs low** → this is unlikely for a tiny 48-hour deployment,
-  but if it happens, Railway pauses the service rather than deleting the
-  volume — top up (requires a card at that point) or move quickly to
-  finish the evaluation window.
+Paste this near the top of `README.md` after replacing the agent id:
 
+````markdown
+## Live Demo
+
+Backend URL: https://aps-autobot-production.up.railway.app
+Production agentId: agent-e72db96a
+
+Check health:
+
+```bash
+export APP_URL="https://aps-autobot-production.up.railway.app"
+export AGENT_ID="PASTE_PRODUCTION_AGENT_ID_HERE"
+curl -s "$APP_URL/health" | jq .
+```
+
+Check feed:
+
+```bash
+curl -s "$APP_URL/api/agent/feed?agentId=$AGENT_ID" | jq .
+```
+
+The evaluator does not need Railway CLI access. The bot is already deployed and
+publishes autonomously on the hosted backend.
+````
 ## Why not Fly.io or Render?
 
 - **Fly.io** requires a credit card after a 2-hour trial (as of 2024's

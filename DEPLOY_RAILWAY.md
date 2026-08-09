@@ -18,8 +18,8 @@ persistent volume at `/data`, which makes Railway a better fit for this agent.
 Use the already-deployed backend:
 
 ```bash
-export APP_URL= "https://aps-autobot-production.up.railway.app"
-export AGENT_ID= agent-e72db96a
+export APP_URL="https://aps-autobot-production.up.railway.app"
+export AGENT_ID="agent-e72db96a"
 ```
 
 Check that the service is alive:
@@ -138,8 +138,8 @@ railway variables --set "DATA_DIR=/data" \
   --set "MAX_CATCHUP_POSTS=3"
 ```
 
-Only after the LLM-backed writer/editor is implemented, optionally set the
-Anthropic key as a private Railway variable:
+Optionally set the Anthropic key as a private Railway variable to enable the
+Claude-backed editorial and writer path:
 
 ```bash
 railway variables --set "ANTHROPIC_API_KEY=REPLACE_ME"

@@ -133,3 +133,58 @@ Codex implemented the T9 static dashboard and inspected the leftover Claude work
 - `/api` service descriptor.
 - Live countdown, feed cards, rejected-topic panel, memory panel, timeline strip, activity log, and API contract explorer.
 - Dashboard server tests and browser smoke verification.
+
+### Prompt
+
+The user asked Codex to move from T9 to T10: resilience, documentation, and final verification.
+
+### AI Assistance
+
+Codex implemented the T10 resilience layer and documentation pass:
+
+- Replaced fixed discovery wiring with a source registry containing stable source IDs, display names, kinds, weights, enable flags, and fetch functions.
+- Added a generic RSS/Atom adapter and registered Simon Willison, OpenAI News, The Register Security, plus GitHub Trending alongside Hacker News, Dev.to, and arXiv.
+- Reduced discovery timeout behavior to a 5 second fetch timeout.
+- Added query rotation based on cycle count so the agent does not ask the same query every cycle.
+- Added per-source circuit breaker telemetry: three consecutive failures disable a source for 30 minutes and surface `disabledUntil` in status/cycle data.
+- Added a persisted candidate reserve pool capped at 20 unpublished candidates.
+- Added total-outage behavior: when live discovery returns no candidates and the reserve pool has suitable candidates, the agent can publish from reserve and says so in the rationale.
+- Added a source diversity governor that chooses an alternate accepted source after two consecutive posts from the same source, and records the reason in the post rationale.
+- Added `sourceName` and `sourceId` to posts so diversity can be evaluated from published history.
+- Added resilience tests for registry coverage, query rotation, circuit breaker disable/re-enable, reserve fallback, source diversity, and init-to-feed integration.
+- Updated the README with live URL, production `agentId`, architecture, autonomy verification, persona charter, thresholds, memory design, fallback behavior, env table, deployment notes, tests, and honest limitations.
+- Updated the Railway deployment runbook to remove stale LLM wording and fix evaluator environment exports.
+
+### Human Decisions
+
+The human directed the project to continue with T10 after the dashboard ticket.
+
+### Implemented Features
+
+- Source registry with API, RSS/Atom, and HTML sources.
+- Generic RSS/Atom feed adapter.
+- Per-source circuit breaker and health reporting.
+- Rotating discovery queries.
+- Candidate reserve pool for live-source outage insurance.
+- Source diversity governor.
+- Updated documentation and deployment notes.
+- Resilience and integration test coverage.
+
+### What Codex Changed Or Rejected
+
+- Kept the reserve pool tied to the existing editorial scoring rather than adding a second ranking system. This keeps reserve behavior aligned with the same judgment rules used for normal publishing.
+- Did not claim the demo recording is complete. The README now marks it as a pending submission asset because no recording link exists in the repo yet.
+- Did not delete the old `First_iteration/` archive. It remains ignored so prior local context is preserved without entering the submission diff.
+- Did not rely on real network calls for resilience tests. Tests mock source responses and failures so they are repeatable in CI and local runs.
+
+### Verification
+
+- Ran `npm test` with local test-server permission. Result: 48 tests passed.
+- The first sandboxed run failed only because the sandbox blocked opening local ephemeral ports for API integration tests; the non-server resilience tests passed in that run.
+
+## AI Limitations We Hit
+
+- AI-generated documentation can drift behind the implementation quickly. T10 included a README correction because earlier docs still described shipped dashboard and transparency endpoints as planned.
+- Network behavior is not reliable enough for tests, so source outage and recovery behavior must be mocked.
+- LLM output needs strict validation and deterministic fallback. Earlier T6 work added JSON validation and repair because malformed or unavailable model responses are normal failure modes.
+- The assistant can improve local code and docs, but it cannot honestly create a demo recording link or verify logged-out public GitHub visibility without the required external action/state.

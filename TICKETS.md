@@ -430,12 +430,12 @@ Integration test: init → forced cycle → feed contains a valid post with rati
 90-second screen recording: dashboard → countdown → wait → new post appears → open its rationale → open the rejected list. Link it in the README for judges who won't wait.
 
 ### Acceptance criteria — resilience
-- [ ] ≥6 sources registered; `/status` reports per-source health
-- [ ] New test: with **all** outbound HTTP mocked to fail, a cycle still publishes from the reserve pool and the rationale states the sources were unreachable
-- [ ] New test: 3 consecutive failures disable a source and set `disabledUntil`; it re-enables after the window
-- [ ] Adding a new RSS source required exactly one registry entry
-- [ ] Two consecutive posts do not come from the same source unless no alternative cleared the bar (and the rationale says so)
-- [ ] Consecutive cycles issue different queries
+- [x] ≥6 sources registered; `/status` reports per-source health
+- [x] New test: with **all** outbound HTTP mocked to fail, a cycle still publishes from the reserve pool and the rationale states the sources were unreachable
+- [x] New test: 3 consecutive failures disable a source and set `disabledUntil`; it re-enables after the window
+- [x] Adding a new RSS source required exactly one registry entry
+- [x] Two consecutive posts do not come from the same source unless no alternative cleared the bar (and the rationale says so)
+- [x] Consecutive cycles issue different queries
 
 ### Acceptance criteria — the 14 pre-submission checks (run against the **deployed** URL)
 - [ ] 1. `POST /init` on a clean deploy returns an `agentId`; `/status` persona matches what was sent
@@ -454,9 +454,10 @@ Integration test: init → forced cycle → feed contains a valid post with rati
 - [ ] 14. Dashboard loads with no console errors
 
 ### Acceptance criteria — docs & authenticity
-- [ ] README contains every section listed above
-- [ ] `AI_USAGE_LOG.md` covers each shipped feature with prompt → output → what changed
-- [ ] `git log --oneline | wc -l` ≥ 30, spread across real working hours, no single commit adding most of the diff
+- [x] README contains every section listed above
+- [x] `AI_USAGE_LOG.md` covers each shipped feature with prompt → output → what changed
+- [x] `git log --oneline | wc -l` ≥ 30 (verified locally: 37)
+- [ ] Commit-history authenticity caveat remains: the early large setup commit cannot be undone, only contextualized by later granular commits and logs
 - [ ] Demo recording linked and plays
 
 ### Commits
